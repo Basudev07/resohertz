@@ -255,8 +255,8 @@ class _HorizontalTuningScaleState extends State<HorizontalTuningScale> {
               // Smooth Physics-Eased Guitar Pick Marker (Optimized for 120Hz & 60Hz displays)
               TweenAnimationBuilder<double>(
                 tween: Tween<double>(end: targetAlignment),
-                duration: const Duration(milliseconds: 240),
-                curve: Curves.easeOutCubic,
+                duration: const Duration(milliseconds: 110),
+                curve: Curves.easeOutQuad,
                 builder: (context, animValue, child) {
                   return Align(
                     alignment: Alignment(animValue, -0.2),

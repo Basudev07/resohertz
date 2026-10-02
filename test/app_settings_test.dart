@@ -17,6 +17,7 @@ void main() {
       expect(defaults.inTuneToleranceCents, 3.0);
       expect(defaults.autoStartListening, isFalse);
       expect(defaults.preferFlats, isFalse);
+      expect(defaults.backgroundStyle, 'classic');
     });
 
     test(
@@ -42,11 +43,13 @@ void main() {
         referenceA4: 432.0,
         inTuneToleranceCents: 2.0,
         preferFlats: true,
+        backgroundStyle: 'aurora',
       );
 
       expect(updated.referenceA4, 432.0);
       expect(updated.inTuneToleranceCents, 2.0);
       expect(updated.preferFlats, isTrue);
+      expect(updated.backgroundStyle, 'aurora');
       expect(updated.lastSelectedTuningId, 'standard');
     });
 
@@ -58,6 +61,7 @@ void main() {
         inTuneToleranceCents: 5.0,
         autoStartListening: true,
         preferFlats: true,
+        backgroundStyle: 'aurora',
       );
 
       final json = original.toJson();
@@ -69,6 +73,7 @@ void main() {
       expect(restored.inTuneToleranceCents, original.inTuneToleranceCents);
       expect(restored.autoStartListening, original.autoStartListening);
       expect(restored.preferFlats, original.preferFlats);
+      expect(restored.backgroundStyle, 'aurora');
       expect(restored, equals(original));
     });
   });

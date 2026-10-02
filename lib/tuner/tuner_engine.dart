@@ -26,10 +26,13 @@ class TunerEngine {
 
   /// Evaluates an incoming [pitchResult] against the specified [preset] (default: standard tuning).
   /// If [referenceA4] is provided, it overrides this engine's default [referenceA4].
+  /// If [previousStatus] is provided, evaluates with hysteresis to prevent rapid boundary toggling.
   TuningResult evaluate({
     required PitchResult pitchResult,
     TuningPreset preset = TuningPreset.standard,
     double? referenceA4,
+    TuningStatus? previousStatus,
+    double hysteresisCents = 1.0,
   }) {
     if (!pitchResult.isPitched || pitchResult.frequency <= 0.0) {
       return const TuningResult.unpitched();
@@ -37,16 +40,37 @@ class TunerEngine {
 
     final effectiveA4 = referenceA4 ?? this.referenceA4;
     final detectedFreq = pitchResult.frequency;
+
+    // Plausible guitar range check: covers low Drop C (~65.4 Hz, or down to 50 Hz for extreme tunings)
+    // up to high fret positions (~850 Hz). Rejects high environmental whistles, speech sibilance, etc.
+    if (detectedFreq < 50.0 || detectedFreq > 850.0) {
+      return const TuningResult.unpitched();
+    }
+
     final closestString = preset.findClosestString(
       detectedFreq,
       referenceA4: effectiveA4,
     );
     final targetFreq = closestString.frequencyAt(effectiveA4);
     final cents = TuningResult.calculateCents(detectedFreq, targetFreq);
-    final status = TuningResult.determineStatus(
-      cents,
-      toleranceCents: inTuneToleranceCents,
-    );
+
+    // Selected-string range check: if detected pitch is more than an octave / extreme distance
+    // (> 600 cents from nearest string in preset), reject as ambient noise.
+    if (cents.abs() > 600.0) {
+      return const TuningResult.unpitched();
+    }
+
+    final status = previousStatus != null
+        ? TuningResult.determineStatusWithHysteresis(
+            cents,
+            previousStatus: previousStatus,
+            toleranceCents: inTuneToleranceCents,
+            hysteresisCents: hysteresisCents,
+          )
+        : TuningResult.determineStatus(
+            cents,
+            toleranceCents: inTuneToleranceCents,
+          );
 
     return TuningResult(
       targetString: closestString,

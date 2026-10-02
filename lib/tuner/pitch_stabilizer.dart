@@ -15,32 +15,69 @@ import 'package:resohertz/tuner/tuning_result.dart';
 /// - Dead-center in-tune anchor: gently locks right at 0.0 when within tolerance
 ///   so the visual marker sits rock-solid in tune.
 class PitchStabilizer {
+  /// Temporary hold duration during string decay before resetting to idle.
+  final Duration holdDuration;
+
   double? _smoothedCents;
   int? _lastStringNumber;
+  TuningResult? _lastReliableResult;
+  DateTime? _lastPitchedTimestamp;
+  bool _isHolding = false;
+
+  PitchStabilizer({
+    this.holdDuration = const Duration(milliseconds: 300),
+  });
 
   /// Current smoothed cents difference.
   double get smoothedCents => _smoothedCents ?? 0.0;
 
-  /// Whether a valid pitch value is currently tracked.
+  /// Whether a valid pitch value is currently tracked (either actively or during hold).
   bool get hasValue => _smoothedCents != null;
+
+  /// Whether the stabilizer is currently holding the last reliable reading
+  /// because the signal is temporarily weak or decaying.
+  bool get isHolding => _isHolding;
+
+  /// The most recent reliable [TuningResult] before any signal fading or hold.
+  TuningResult? get lastReliableResult => _lastReliableResult;
 
   /// Resets the stabilizer (e.g., when audio capture stops or signal is lost).
   void reset() {
     _smoothedCents = null;
     _lastStringNumber = null;
+    _lastReliableResult = null;
+    _lastPitchedTimestamp = null;
+    _isHolding = false;
   }
 
   /// Ingests the latest [TuningResult] and returns the stabilized cents value
   /// to position the visual indicator.
-  double update(TuningResult result) {
+  ///
+  /// - When [result.isPitched] is true, smoothly tracks pitch changes.
+  /// - When [result.isPitched] is false, holds the last reliable reading for [holdDuration]
+  ///   to prevent visual jumpiness during string decay before returning to 0.0.
+  double update(TuningResult result, {DateTime? timestamp}) {
+    final now = timestamp ?? DateTime.now();
+
     if (!result.isPitched) {
-      _smoothedCents = null;
-      _lastStringNumber = null;
+      if (_smoothedCents != null && holdDuration > Duration.zero) {
+        if (_lastPitchedTimestamp != null &&
+            now.difference(_lastPitchedTimestamp!) < holdDuration) {
+          _isHolding = true;
+          return _smoothedCents!;
+        }
+      }
+      reset();
       return 0.0;
     }
 
     final rawCents = result.centsDifference;
     final currentStringNumber = result.targetString?.stringNumber;
+
+    // Track reliable state
+    _lastReliableResult = result;
+    _lastPitchedTimestamp = now;
+    _isHolding = false;
 
     // If first pitched detection or target string changed, snap immediately
     if (_smoothedCents == null || _lastStringNumber != currentStringNumber) {

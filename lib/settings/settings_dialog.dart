@@ -26,6 +26,7 @@ class SettingsDialog extends StatefulWidget {
 class _SettingsDialogState extends State<SettingsDialog> {
   late bool _autoStart;
   late bool _preferSharps;
+  late String _backgroundStyle;
 
   @override
   void initState() {
@@ -33,12 +34,14 @@ class _SettingsDialogState extends State<SettingsDialog> {
     _autoStart = widget.currentSettings.autoStartListening;
     // preferFlats == false means preferSharps == true
     _preferSharps = !widget.currentSettings.preferFlats;
+    _backgroundStyle = widget.currentSettings.backgroundStyle;
   }
 
   void _resetDefaults() {
     setState(() {
       _autoStart = AppSettings.defaultSettings.autoStartListening;
       _preferSharps = !AppSettings.defaultSettings.preferFlats;
+      _backgroundStyle = AppSettings.defaultSettings.backgroundStyle;
     });
   }
 
@@ -46,6 +49,7 @@ class _SettingsDialogState extends State<SettingsDialog> {
     final updated = widget.currentSettings.copyWith(
       autoStartListening: _autoStart,
       preferFlats: !_preferSharps,
+      backgroundStyle: _backgroundStyle,
     );
     widget.onSave(updated);
     Navigator.of(context).pop();
@@ -145,6 +149,63 @@ class _SettingsDialogState extends State<SettingsDialog> {
               value: _preferSharps,
               onChanged: (val) => setState(() => _preferSharps = val),
             ),
+            const Divider(color: border, height: 10, thickness: 0.8),
+
+            // 3. Background Ambiance Visual Style
+            Padding(
+              padding: const EdgeInsets.only(top: 4.0, bottom: 2.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Background Style',
+                    style: TextStyle(
+                      color: primary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Choose visual ambiance (Default: French Blue)',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: primary.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildThemeOption(
+                          key: const Key('bg_style_classic'),
+                          title: 'French Blue',
+                          badge: 'DEFAULT',
+                          selected: _backgroundStyle == 'classic',
+                          accentColor: primary,
+                          borderColor: border,
+                          onTap: () =>
+                              setState(() => _backgroundStyle = 'classic'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildThemeOption(
+                          key: const Key('bg_style_aurora'),
+                          title: 'Chromatic',
+                          badge: 'AURORA',
+                          selected: _backgroundStyle == 'aurora',
+                          accentColor: const Color(0xFF37E7FF),
+                          borderColor: border,
+                          onTap: () =>
+                              setState(() => _backgroundStyle = 'aurora'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -203,6 +264,72 @@ class _SettingsDialogState extends State<SettingsDialog> {
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildThemeOption({
+    required Key key,
+    required String title,
+    required String badge,
+    required bool selected,
+    required Color accentColor,
+    required Color borderColor,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      key: key,
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected
+              ? accentColor.withValues(alpha: 0.15)
+              : Colors.black.withValues(alpha: 0.22),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: selected ? accentColor : borderColor.withValues(alpha: 0.6),
+            width: selected ? 1.6 : 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: selected ? Colors.white : Colors.white70,
+                    fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                    fontSize: 12,
+                  ),
+                ),
+                Text(
+                  badge,
+                  style: TextStyle(
+                    color: selected ? accentColor : Colors.white38,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+            if (selected)
+              Icon(Icons.check_circle_rounded, color: accentColor, size: 16)
+            else
+              const Icon(
+                Icons.circle_outlined,
+                color: Colors.white24,
+                size: 16,
+              ),
+          ],
+        ),
+      ),
     );
   }
 }

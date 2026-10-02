@@ -84,6 +84,30 @@ class TuningResult {
     }
   }
 
+  /// Determines [TuningStatus] with hysteresis to prevent rapid boundary oscillation.
+  ///
+  /// - When transitioning INTO [TuningStatus.inTune], requires |centsDifference| <= [toleranceCents].
+  /// - When already in [TuningStatus.inTune], requires |centsDifference| > ([toleranceCents] + [hysteresisCents])
+  ///   to transition back to flat or sharp.
+  static TuningStatus determineStatusWithHysteresis(
+    double centsDifference, {
+    required TuningStatus previousStatus,
+    double toleranceCents = 3.0,
+    double hysteresisCents = 1.0,
+  }) {
+    final effectiveTolerance = previousStatus == TuningStatus.inTune
+        ? (toleranceCents + hysteresisCents)
+        : toleranceCents;
+
+    if (centsDifference.abs() <= effectiveTolerance) {
+      return TuningStatus.inTune;
+    } else if (centsDifference < -effectiveTolerance) {
+      return TuningStatus.flat;
+    } else {
+      return TuningStatus.sharp;
+    }
+  }
+
   @override
   String toString() {
     if (!isPitched) return 'TuningResult.unpitched';

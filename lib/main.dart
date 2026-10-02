@@ -8,7 +8,7 @@ import 'package:resohertz/pitch/yin_pitch_detector.dart';
 import 'package:resohertz/settings/app_settings.dart';
 import 'package:resohertz/settings/app_settings_service.dart';
 import 'package:resohertz/settings/settings_dialog.dart';
-import 'package:resohertz/tuner/guitar_pick_indicator.dart';
+import 'package:resohertz/tuner/circular_knob_tuner.dart';
 import 'package:resohertz/tuner/pitch_stabilizer.dart';
 import 'package:resohertz/tuner/tuner_engine.dart';
 import 'package:resohertz/tuner/tuning_result.dart';
@@ -16,6 +16,7 @@ import 'package:resohertz/tuning/custom_tuning_dialog.dart';
 import 'package:resohertz/tuning/custom_tuning_storage.dart';
 import 'package:resohertz/tuning/reference_frequency.dart';
 import 'package:resohertz/tuning/tuning_preset.dart';
+import 'package:resohertz/ui/aurora_mesh_background.dart';
 
 void main() {
   runApp(const ResoHertzApp());
@@ -163,6 +164,8 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
   int _inTuneConsecutiveFrames = 0;
   bool _hasPlayedInTuneSoundForCurrentNote = false;
   int _unpitchedConsecutiveFrames = 0;
+  int? _candidateStringNumber;
+  int _candidateStringFrames = 0;
   double _referenceA4 = ReferenceFrequency.standard;
   TuningPreset _selectedPreset = TuningPreset.standard;
   String? _captureError;
@@ -387,11 +390,25 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
 
   Future<void> _openTuningBottomSheet() async {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isAurora = _settings.backgroundStyle == 'aurora';
+    final sheetBg = isDark
+        ? (isAurora ? const Color(0xFF131524) : const Color(0xFF004382))
+        : Colors.white;
+    final sheetAccent = isDark
+        ? (isAurora ? const Color(0xFF37E7FF) : const Color(0xFFDCF4A2))
+        : Theme.of(context).colorScheme.primary;
+
+    final itemBg = isDark
+        ? (isAurora ? const Color(0xFF1B1E32) : const Color(0xFF00376B))
+        : Colors.black.withValues(alpha: 0.02);
+    final itemBorder = isDark
+        ? (isAurora ? const Color(0xFF282D4A) : const Color(0xFF0068C7))
+        : const Color(0xFFE4E6F0);
 
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      backgroundColor: isDark ? const Color(0xFF004382) : Colors.white,
+      backgroundColor: sheetBg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -419,7 +436,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                       height: 4,
                       decoration: BoxDecoration(
                         color: isDark
-                            ? const Color(0xFFDCF4A2).withValues(alpha: 0.3)
+                            ? sheetAccent.withValues(alpha: 0.35)
                             : Colors.black26,
                         borderRadius: BorderRadius.circular(2),
                       ),
@@ -433,7 +450,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                         children: [
                           Icon(
                             Icons.tune,
-                            color: Theme.of(context).colorScheme.primary,
+                            color: sheetAccent,
                             size: 22,
                           ),
                           const SizedBox(width: 10),
@@ -447,7 +464,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                     color: isDark
-                                        ? const Color(0xFFDCF4A2)
+                                        ? sheetAccent
                                         : const Color(0xFF1E202C),
                                   ),
                                 ),
@@ -456,9 +473,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                   style: TextStyle(
                                     fontSize: 12,
                                     color: isDark
-                                        ? const Color(
-                                            0xFFDCF4A2,
-                                          ).withValues(alpha: 0.7)
+                                        ? sheetAccent.withValues(alpha: 0.7)
                                         : Colors.black54,
                                   ),
                                 ),
@@ -489,7 +504,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                             icon: Icon(
                               Icons.close,
                               size: 20,
-                              color: isDark ? const Color(0xFFDCF4A2) : null,
+                              color: isDark ? sheetAccent : null,
                             ),
                             visualDensity: VisualDensity.compact,
                             onPressed: () => Navigator.of(sheetContext).pop(),
@@ -512,9 +527,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                               color: _showFavoritesOnly
                                   ? Colors.amberAccent
                                   : (isDark
-                                        ? const Color(
-                                            0xFFDCF4A2,
-                                          ).withValues(alpha: 0.7)
+                                        ? sheetAccent.withValues(alpha: 0.7)
                                         : Colors.black54),
                             ),
                             label: Text(
@@ -550,9 +563,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                     Icons.star_border,
                                     size: 40,
                                     color: isDark
-                                        ? const Color(
-                                            0xFFDCF4A2,
-                                          ).withValues(alpha: 0.3)
+                                        ? sheetAccent.withValues(alpha: 0.3)
                                         : Colors.black26,
                                   ),
                                   const SizedBox(height: 8),
@@ -560,9 +571,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                     'No favorite tunings yet',
                                     style: TextStyle(
                                       color: isDark
-                                          ? const Color(
-                                              0xFFDCF4A2,
-                                            ).withValues(alpha: 0.7)
+                                          ? sheetAccent.withValues(alpha: 0.7)
                                           : Colors.black54,
                                       fontSize: 14,
                                     ),
@@ -591,25 +600,13 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                   margin: const EdgeInsets.only(bottom: 8.0),
                                   decoration: BoxDecoration(
                                     color: isSelected
-                                        ? Theme.of(
-                                            context,
-                                          ).colorScheme.primary.withValues(
-                                            alpha: isDark ? 0.25 : 0.10,
+                                        ? sheetAccent.withValues(
+                                            alpha: isDark ? 0.20 : 0.10,
                                           )
-                                        : (isDark
-                                              ? const Color(0xFF00376B)
-                                              : Colors.black.withValues(
-                                                  alpha: 0.02,
-                                                )),
+                                        : itemBg,
                                     borderRadius: BorderRadius.circular(14),
                                     border: Border.all(
-                                      color: isSelected
-                                          ? Theme.of(
-                                              context,
-                                            ).colorScheme.primary
-                                          : (isDark
-                                                ? const Color(0xFF0068C7)
-                                                : const Color(0xFFE4E6F0)),
+                                      color: isSelected ? sheetAccent : itemBorder,
                                       width: isSelected ? 1.8 : 1.0,
                                     ),
                                   ),
@@ -635,13 +632,11 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                       : Icons
                                                             .music_note_outlined),
                                             color: isSelected
-                                                ? Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary
+                                                ? sheetAccent
                                                 : (isDark
-                                                      ? const Color(
-                                                          0xFFDCF4A2,
-                                                        ).withValues(alpha: 0.6)
+                                                      ? (isAurora
+                                                            ? Colors.white54
+                                                            : sheetAccent.withValues(alpha: 0.6))
                                                       : Colors.black38),
                                             size: 22,
                                           ),
@@ -665,16 +660,14 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                               : FontWeight.w600,
                                                           color: isSelected
                                                               ? (isDark
-                                                                    ? const Color(
-                                                                        0xFFDCF4A2,
-                                                                      )
+                                                                    ? sheetAccent
                                                                     : Theme.of(
                                                                         context,
                                                                       ).colorScheme.primary)
                                                               : (isDark
-                                                                    ? const Color(
-                                                                        0xFFDCF4A2,
-                                                                      )
+                                                                    ? (isAurora
+                                                                          ? Colors.white
+                                                                          : const Color(0xFFDCF4A2))
                                                                     : const Color(
                                                                         0xFF1E202C,
                                                                       )),
@@ -723,11 +716,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                     fontSize: 12,
                                                     letterSpacing: 1.1,
                                                     color: isDark
-                                                        ? const Color(
-                                                            0xFFDCF4A2,
-                                                          ).withValues(
-                                                            alpha: 0.7,
-                                                          )
+                                                        ? (isAurora
+                                                              ? Colors.white70
+                                                              : sheetAccent.withValues(alpha: 0.7))
                                                         : Colors.black54,
                                                   ),
                                                 ),
@@ -744,10 +735,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                     vertical: 3,
                                                   ),
                                               decoration: BoxDecoration(
-                                                color: Theme.of(context)
-                                                    .colorScheme
-                                                    .primary
-                                                    .withValues(alpha: 0.25),
+                                                color: sheetAccent.withValues(alpha: 0.20),
                                                 borderRadius:
                                                     BorderRadius.circular(8),
                                               ),
@@ -756,13 +744,11 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                 style: TextStyle(
                                                   fontSize: 10,
                                                   fontWeight: FontWeight.bold,
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
+                                                  color: sheetAccent,
                                                 ),
                                               ),
                                             ),
-                                            const SizedBox(width: 4),
+                                            const SizedBox(width: 8),
                                           ],
 
                                           // Favorite Star Toggle
@@ -775,11 +761,10 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               color: isFav
                                                   ? Colors.amberAccent
                                                   : (isDark
-                                                        ? const Color(
-                                                            0xFFDCF4A2,
-                                                          ).withValues(
-                                                            alpha: 0.4,
-                                                          )
+                                                        ? sheetAccent
+                                                            .withValues(
+                                                              alpha: 0.4,
+                                                            )
                                                         : Colors.black26),
                                               size: 20,
                                             ),
@@ -911,6 +896,8 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
       _tuningResult = const TuningResult.unpitched();
       _inTuneConsecutiveFrames = 0;
       _unpitchedConsecutiveFrames = 0;
+      _candidateStringNumber = null;
+      _candidateStringFrames = 0;
       _hasPlayedInTuneSoundForCurrentNote = false;
     });
 
@@ -939,15 +926,58 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                   pitchResult: pitch,
                   preset: _selectedPreset,
                   referenceA4: _referenceA4,
+                  previousStatus: _tuningResult.status,
                 )
               : const TuningResult.unpitched();
 
+          // Outlier & Noise Rejection during active note decay:
+          // If we are currently tracking or holding an active string, and a weak 1-frame noise chunk
+          // detects a wild jump to a different string (e.g. ambient voice phoneme or mic rustle),
+          // reject the outlier unless confirmed by strong energy (new pluck) or 2 consecutive frames.
+          final TuningResult effectiveTuning;
+          if (tuning.isPitched &&
+              _pitchStabilizer.hasValue &&
+              _pitchStabilizer.lastReliableResult?.targetString != null &&
+              tuning.targetString != null &&
+              tuning.targetString!.stringNumber !=
+                  _pitchStabilizer
+                      .lastReliableResult!
+                      .targetString!
+                      .stringNumber) {
+            final incomingStringNum = tuning.targetString!.stringNumber;
+            if (_candidateStringNumber == incomingStringNum) {
+              _candidateStringFrames++;
+            } else {
+              _candidateStringNumber = incomingStringNum;
+              _candidateStringFrames = 1;
+            }
+
+            final isStrongPluck = rms >= 105.0;
+            final isConfirmedStringChange =
+                isStrongPluck || _candidateStringFrames >= 2;
+
+            if (isConfirmedStringChange) {
+              effectiveTuning = tuning;
+              _candidateStringNumber = null;
+              _candidateStringFrames = 0;
+            } else {
+              // Reject isolated weak outlier, treat as unpitched to continue stable decay hold
+              effectiveTuning = const TuningResult.unpitched();
+            }
+          } else {
+            _candidateStringNumber = null;
+            _candidateStringFrames = 0;
+            effectiveTuning = tuning;
+          }
+
+          final smoothedCents = _pitchStabilizer.update(effectiveTuning);
+
           // In-Tune Audio Feedback State Machine:
-          // Requires 2 consecutive in-tune frames (~90ms) before triggering sound,
+          // Requires 2 consecutive in-tune frames (~90ms stability window) before triggering sound,
           // which rejects isolated ambient room noise spikes while responding swiftly to real plucks.
-          if (pitch.isPitched) {
+          if (effectiveTuning.isPitched) {
             _unpitchedConsecutiveFrames = 0;
-            if (tuning.status == TuningStatus.inTune) {
+            if (effectiveTuning.status == TuningStatus.inTune) {
               _inTuneConsecutiveFrames++;
               if (_inTuneConsecutiveFrames >= 2 &&
                   !_hasPlayedInTuneSoundForCurrentNote) {
@@ -961,29 +991,35 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
               }
             } else {
               _inTuneConsecutiveFrames = 0;
-              // Left in-tune range: Only re-arm if pitch moved substantially out of tune (> 6 cents)
-              // for a genuine peg adjustment, preventing speaker harmonics from re-triggering!
-              if (tuning.centsDifference.abs() > 6.0) {
+              // Left in-tune range: Only re-arm if pitch moved past tolerance + hysteresis
+              // (e.g. genuine peg adjustment > 4.5 cents)
+              final rearmThreshold = _settings.inTuneToleranceCents + 1.5;
+              if (effectiveTuning.centsDifference.abs() > rearmThreshold) {
                 _hasPlayedInTuneSoundForCurrentNote = false;
               }
             }
           } else {
             _unpitchedConsecutiveFrames++;
             _inTuneConsecutiveFrames = 0;
-            // Only re-arm after note has decayed into silence for at least ~600ms (14 frames)
-            if (_unpitchedConsecutiveFrames >= 14) {
+            // Only re-arm after note has decayed into silence for at least ~500ms (11 frames)
+            if (_unpitchedConsecutiveFrames >= 11) {
               _hasPlayedInTuneSoundForCurrentNote = false;
             }
           }
 
-          final smoothedCents = _pitchStabilizer.update(tuning);
-
           setState(() {
-            if (pitch.isPitched) {
+            if (effectiveTuning.isPitched) {
               _pitchResult = pitch;
-              _tuningResult = tuning;
+              _tuningResult = effectiveTuning;
               _visualCents = smoothedCents;
-            } else if (_unpitchedConsecutiveFrames >= 2 || !isAudible) {
+            } else if (_pitchStabilizer.isHolding &&
+                _pitchStabilizer.lastReliableResult != null) {
+              // String decay hold period (~300ms): keep the last reliable note and string,
+              // and hold the visual indicator smoothly instead of instantly collapsing to 0.
+              _tuningResult = _pitchStabilizer.lastReliableResult!;
+              _visualCents = smoothedCents;
+            } else {
+              // Hold period expired or tuner is idle: return cleanly to unpitched state
               _pitchResult = const PitchResult.unpitched();
               _tuningResult = const TuningResult.unpitched();
               _visualCents = 0.0;
@@ -999,6 +1035,8 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
             _visualCents = 0.0;
             _inTuneConsecutiveFrames = 0;
             _unpitchedConsecutiveFrames = 0;
+            _candidateStringNumber = null;
+            _candidateStringFrames = 0;
             _hasPlayedInTuneSoundForCurrentNote = false;
             _pitchStabilizer.reset();
           });
@@ -1012,6 +1050,8 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
         _visualCents = 0.0;
         _inTuneConsecutiveFrames = 0;
         _unpitchedConsecutiveFrames = 0;
+        _candidateStringNumber = null;
+        _candidateStringFrames = 0;
         _hasPlayedInTuneSoundForCurrentNote = false;
         _pitchStabilizer.reset();
       });
@@ -1028,6 +1068,8 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
         _visualCents = 0.0;
         _inTuneConsecutiveFrames = 0;
         _unpitchedConsecutiveFrames = 0;
+        _candidateStringNumber = null;
+        _candidateStringFrames = 0;
         _hasPlayedInTuneSoundForCurrentNote = false;
         _pitchStabilizer.reset();
       });
@@ -1035,45 +1077,85 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
     await _audioCaptureService.stopCapture();
   }
 
+  void _toggleCapture() {
+    HapticFeedback.selectionClick();
+    if (_isCapturing) {
+      _stopCapture();
+    } else {
+      _startCapture();
+    }
+  }
+
   Color _getStatusColor(TuningStatus status, bool isDark) {
+    final isAurora = _settings.backgroundStyle == 'aurora';
     switch (status) {
       case TuningStatus.inTune:
-        return isDark ? const Color(0xFFDCF4A2) : const Color(0xFF059669);
+        return isDark
+            ? (isAurora ? const Color(0xFF00FFB2) : const Color(0xFFDCF4A2))
+            : const Color(0xFF059669);
       case TuningStatus.flat:
         return isDark ? const Color(0xFFFFD54F) : const Color(0xFFD97706);
       case TuningStatus.sharp:
         return isDark ? const Color(0xFFFF7043) : const Color(0xFFDC2626);
       case TuningStatus.unpitched:
         return isDark
-            ? const Color(0xFFDCF4A2).withValues(alpha: 0.7)
+            ? (isAurora ? const Color(0xFF37E7FF) : const Color(0xFFDCF4A2))
+                .withValues(alpha: 0.7)
             : const Color(0xFF6B7280);
     }
   }
 
-  String _getStatusText(TuningStatus status) {
+  String _getStatusTitle(TuningStatus status) {
     switch (status) {
       case TuningStatus.inTune:
         return 'IN TUNE';
       case TuningStatus.flat:
-        return 'FLAT (Tune Up)';
+        return 'FLAT';
       case TuningStatus.sharp:
-        return 'SHARP (Tune Down)';
+        return 'SHARP';
       case TuningStatus.unpitched:
         return 'LISTENING...';
+    }
+  }
+
+  String? _getStatusInstruction(TuningStatus status) {
+    switch (status) {
+      case TuningStatus.inTune:
+        return null;
+      case TuningStatus.flat:
+        return '(Tune Up)';
+      case TuningStatus.sharp:
+        return '(Tune Down)';
+      case TuningStatus.unpitched:
+        return 'Pluck string • Tap to stop';
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isAurora = _settings.backgroundStyle == 'aurora';
+    final themeAccent = isDark
+        ? (isAurora ? const Color(0xFF37E7FF) : const Color(0xFFDCF4A2))
+        : (isAurora ? const Color(0xFF007A99) : const Color(0xFF0055A4));
+    final containerBg = isDark
+        ? (isAurora ? const Color(0xFF141829) : const Color(0xFF00376B))
+        : Colors.black.withValues(alpha: 0.04);
+    final containerBorder = isDark
+        ? (isAurora ? const Color(0xFF262C46) : const Color(0xFF0068C7))
+        : const Color(0xFFE4E6F0);
+
     final statusColor = _isCapturing
         ? _getStatusColor(_tuningResult.status, isDark)
         : (isDark
-              ? const Color(0xFFDCF4A2).withValues(alpha: 0.5)
+              ? themeAccent.withValues(alpha: 0.5)
               : const Color(0xFF6B7280));
-    final statusText = _isCapturing
-        ? _getStatusText(_tuningResult.status)
+    final statusTitle = _isCapturing
+        ? _getStatusTitle(_tuningResult.status)
         : 'TUNER OFF';
+    final statusInstruction = _isCapturing
+        ? _getStatusInstruction(_tuningResult.status)
+        : 'Tap knob to turn on';
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -1089,7 +1171,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                 borderRadius: BorderRadius.circular(9),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFFDCF4A2).withValues(alpha: 0.35),
+                    color: themeAccent.withValues(alpha: 0.35),
                     blurRadius: 12,
                     spreadRadius: 1,
                   ),
@@ -1106,12 +1188,12 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                   errorBuilder: (context, error, stackTrace) => Container(
                     padding: const EdgeInsets.all(6),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00376B),
+                      color: containerBg,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.graphic_eq,
-                      color: Color(0xFFDCF4A2),
+                      color: themeAccent,
                       size: 18,
                     ),
                   ),
@@ -1123,13 +1205,13 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
+                Text(
                   'RESO HERTZ',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
                     letterSpacing: 2.2,
-                    color: Color(0xFFDCF4A2),
+                    color: themeAccent,
                   ),
                 ),
                 Text(
@@ -1138,7 +1220,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                     fontSize: 9,
                     fontWeight: FontWeight.w600,
                     letterSpacing: 1.2,
-                    color: const Color(0xFFDCF4A2).withValues(alpha: 0.7),
+                    color: themeAccent.withValues(alpha: 0.7),
                   ),
                 ),
               ],
@@ -1149,30 +1231,37 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
         actions: [
           IconButton(
             key: const Key('settings_button'),
-            icon: const Icon(Icons.settings_outlined, color: Color(0xFFDCF4A2)),
+            icon: Icon(Icons.settings_outlined, color: themeAccent),
             tooltip: 'Settings',
             onPressed: _openSettingsDialog,
           ),
         ],
       ),
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(
-          color: Color(0xFF0055A4),
-          gradient: RadialGradient(
-            center: Alignment(-1.0, -1.0),
-            radius: 0.85,
-            colors: [
-              Color(0x3BDCF4A2), // Subtle lime yellow glow from top-left
-              Color(0x14DCF4A2), // Soft fade past the logo icon
-              Color(0xFF0055A4), // Deep signature French Blue
-            ],
-            stops: [0.0, 0.40, 1.0],
-          ),
-        ),
-        child: SafeArea(
-          child: Center(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Background layer: Default is Classic French Blue with lime glow;
+          // can be switched to Chromatic Aurora in Settings
+          if (isAurora)
+            const AuroraMeshBackground()
+          else
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color(0xFF0055A4),
+                gradient: RadialGradient(
+                  center: Alignment(-1.0, -1.0),
+                  radius: 0.85,
+                  colors: [
+                    Color(0x3BDCF4A2), // Subtle lime yellow glow from top-left
+                    Color(0x14DCF4A2), // Soft fade past the logo icon
+                    Color(0xFF0055A4), // Deep signature French Blue
+                  ],
+                  stops: [0.0, 0.40, 1.0],
+                ),
+              ),
+            ),
+          SafeArea(
+            child: Center(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(
                 horizontal: 24.0,
@@ -1214,47 +1303,29 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                           ),
                         ],
                         if (_hasPermission) ...[
-                          // Standard Guitar Tuner Card with In-Tune Bloom Animation
-                          AnimatedContainer(
-                            duration: const Duration(milliseconds: 250),
-                            curve: Curves.easeInOut,
-                            decoration: BoxDecoration(
-                              color: isDark
-                                  ? const Color(0xFF004382)
+                          // Standard Guitar Tuner Card with Ramped Fade into Background
+                          CustomPaint(
+                            painter: RampedCardPainter(
+                              cardColor: isDark
+                                  ? (isAurora
+                                      ? const Color(0xFF131522).withValues(alpha: 0.85)
+                                      : const Color(0xFF004382))
                                   : Colors.white,
-                              borderRadius: BorderRadius.circular(20),
-                              border: Border.all(
-                                color:
-                                    _tuningResult.status == TuningStatus.inTune
-                                    ? statusColor
-                                    : (isDark
-                                          ? const Color(0xFF0068C7)
-                                          : const Color(0xFFE4E6F0)),
-                                width:
-                                    _tuningResult.status == TuningStatus.inTune
-                                    ? 2.5
-                                    : 1.2,
-                              ),
-                              boxShadow: [
-                                if (_tuningResult.status == TuningStatus.inTune)
-                                  BoxShadow(
-                                    color: statusColor.withValues(alpha: 0.35),
-                                    blurRadius: 24,
-                                    spreadRadius: 2,
-                                  )
-                                else if (isDark)
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.4),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  )
-                                else
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.05),
-                                    blurRadius: 12,
-                                    offset: const Offset(0, 4),
-                                  ),
-                              ],
+                              borderColor:
+                                  _tuningResult.status == TuningStatus.inTune
+                                  ? statusColor
+                                  : (isDark
+                                        ? (isAurora
+                                            ? const Color(0xFF282D47).withValues(alpha: 0.70)
+                                            : const Color(0xFF0068C7))
+                                        : const Color(0xFFE4E6F0)),
+                              borderWidth:
+                                  _tuningResult.status == TuningStatus.inTune
+                                  ? 2.5
+                                  : 1.2,
+                              isInTune:
+                                  _tuningResult.status == TuningStatus.inTune,
+                              inTuneGlowColor: statusColor,
                             ),
                             child: Padding(
                               padding: const EdgeInsets.symmetric(
@@ -1278,7 +1349,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                           style: TextStyle(
                                             fontSize: 14,
                                             color: isDark
-                                                ? const Color(0xFFDCF4A2)
+                                                ? themeAccent
                                                 : Colors.black87,
                                             fontWeight: FontWeight.w600,
                                           ),
@@ -1302,9 +1373,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               )
                                               ? Colors.amberAccent
                                               : (isDark
-                                                    ? const Color(
-                                                        0xFFDCF4A2,
-                                                      ).withValues(alpha: 0.5)
+                                                    ? themeAccent.withValues(alpha: 0.5)
                                                     : Colors.black38),
                                           size: 18,
                                         ),
@@ -1347,17 +1416,11 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               vertical: 6,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: isDark
-                                                  ? const Color(0xFF00376B)
-                                                  : Colors.black.withValues(
-                                                      alpha: 0.05,
-                                                    ),
+                                              color: containerBg,
                                               borderRadius:
                                                   BorderRadius.circular(20),
                                               border: Border.all(
-                                                color: isDark
-                                                    ? const Color(0xFF0068C7)
-                                                    : const Color(0xFFE4E6F0),
+                                                color: containerBorder,
                                               ),
                                             ),
                                             child: Row(
@@ -1367,9 +1430,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                   Icons.tune,
                                                   key: const Key('tuning_icon'),
                                                   size: 16,
-                                                  color: Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
+                                                  color: themeAccent,
                                                 ),
                                                 const SizedBox(width: 8),
                                                 Text(
@@ -1378,9 +1439,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                     fontSize: 12,
                                                     fontWeight: FontWeight.bold,
                                                     color: isDark
-                                                        ? const Color(
-                                                            0xFFDCF4A2,
-                                                          )
+                                                        ? themeAccent
                                                         : const Color(
                                                             0xFF1E202C,
                                                           ),
@@ -1391,9 +1450,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                   Icons.keyboard_arrow_down,
                                                   size: 18,
                                                   color: isDark
-                                                      ? const Color(
-                                                          0xFFDCF4A2,
-                                                        ).withValues(alpha: 0.7)
+                                                      ? themeAccent.withValues(alpha: 0.7)
                                                       : Colors.black54,
                                                 ),
                                               ],
@@ -1411,17 +1468,10 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                         vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: isDark
-                                            ? const Color(0xFF00376B)
-                                            : Colors.deepPurple.withValues(
-                                                alpha: 0.2,
-                                              ),
+                                        color: containerBg,
                                         borderRadius: BorderRadius.circular(8),
                                         border: Border.all(
-                                          color: isDark
-                                              ? const Color(0xFF0068C7)
-                                              : Colors.deepPurpleAccent
-                                                    .withValues(alpha: 0.3),
+                                          color: containerBorder,
                                         ),
                                       ),
                                       child: Row(
@@ -1439,7 +1489,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                 fontSize: 11,
                                                 fontWeight: FontWeight.w600,
                                                 color: isDark
-                                                    ? const Color(0xFFDCF4A2)
+                                                    ? themeAccent
                                                     : const Color(0xFF1E202C),
                                               ),
                                               overflow: TextOverflow.ellipsis,
@@ -1458,6 +1508,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               style: TextStyle(fontSize: 11),
                                             ),
                                             style: TextButton.styleFrom(
+                                              foregroundColor: themeAccent,
                                               visualDensity:
                                                   VisualDensity.compact,
                                             ),
@@ -1503,16 +1554,10 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                       vertical: 8,
                                     ),
                                     decoration: BoxDecoration(
-                                      color: isDark
-                                          ? const Color(0xFF00376B)
-                                          : Colors.black.withValues(
-                                              alpha: 0.03,
-                                            ),
+                                      color: containerBg,
                                       borderRadius: BorderRadius.circular(14),
                                       border: Border.all(
-                                        color: isDark
-                                            ? const Color(0xFF0068C7)
-                                            : const Color(0xFFE4E6F0),
+                                        color: containerBorder,
                                       ),
                                     ),
                                     child: Column(
@@ -1531,7 +1576,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                 fontSize: 14,
                                                 fontWeight: FontWeight.bold,
                                                 color: isDark
-                                                    ? const Color(0xFFDCF4A2)
+                                                    ? themeAccent
                                                     : const Color(0xFF1E202C),
                                               ),
                                             ),
@@ -1563,15 +1608,13 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                             : FontWeight.normal,
                                                         color: isSelected
                                                             ? (isDark
-                                                                  ? const Color(
-                                                                      0xFF00376B,
-                                                                    )
+                                                                  ? (isAurora
+                                                                        ? const Color(0xFF0D101D)
+                                                                        : const Color(0xFF00376B))
                                                                   : Colors
                                                                         .white)
                                                             : (isDark
-                                                                  ? const Color(
-                                                                      0xFFDCF4A2,
-                                                                    )
+                                                                  ? themeAccent
                                                                   : Colors
                                                                         .black87),
                                                       ),
@@ -1585,14 +1628,18 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                         const EdgeInsets.symmetric(
                                                           horizontal: 6,
                                                         ),
-                                                    selectedColor: Theme.of(
-                                                      context,
-                                                    ).colorScheme.primary,
+                                                    selectedColor: themeAccent,
                                                     backgroundColor: isDark
-                                                        ? const Color(
-                                                            0xFF004382,
-                                                          )
+                                                        ? (isAurora
+                                                              ? const Color(0xFF20263E)
+                                                              : const Color(0xFF004382))
                                                         : null,
+                                                    side: BorderSide(
+                                                      color: isSelected
+                                                          ? themeAccent
+                                                          : containerBorder,
+                                                      width: isSelected ? 1.4 : 1.0,
+                                                    ),
                                                     showCheckmark: false,
                                                   ),
                                                 );
@@ -1609,9 +1656,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 color: isDark
-                                                    ? const Color(
-                                                        0xFFDCF4A2,
-                                                      ).withValues(alpha: 0.6)
+                                                    ? themeAccent.withValues(
+                                                        alpha: 0.6,
+                                                      )
                                                     : Colors.black38,
                                               ),
                                             ),
@@ -1652,12 +1699,11 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                       ReferenceFrequency.format(
                                                         _referenceA4,
                                                       ),
-                                                  activeColor: Theme.of(
-                                                    context,
-                                                  ).colorScheme.primary,
+                                                  activeColor: themeAccent,
                                                   inactiveColor: isDark
-                                                      ? const Color(0xFF0068C7)
+                                                      ? containerBorder
                                                       : Colors.black12,
+                                                  thumbColor: themeAccent,
                                                   onChanged: (double value) {
                                                     _setReferenceA4(
                                                       value.roundToDouble(),
@@ -1671,9 +1717,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               style: TextStyle(
                                                 fontSize: 10,
                                                 color: isDark
-                                                    ? const Color(
-                                                        0xFFDCF4A2,
-                                                      ).withValues(alpha: 0.6)
+                                                    ? themeAccent.withValues(
+                                                        alpha: 0.6,
+                                                      )
                                                     : Colors.black38,
                                               ),
                                             ),
@@ -1724,9 +1770,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                         final stringColor = isCurrentTarget
                                             ? statusColor
                                             : (isDark
-                                                  ? const Color(
-                                                      0xFFDCF4A2,
-                                                    ).withValues(alpha: 0.8)
+                                                  ? themeAccent.withValues(
+                                                      alpha: 0.85,
+                                                    )
                                                   : Colors.black54);
                                         final activeBg = isCurrentTarget
                                             ? statusColor.withValues(
@@ -1752,9 +1798,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               color: isCurrentTarget
                                                   ? statusColor
                                                   : (isDark
-                                                        ? const Color(
-                                                            0xFF0068C7,
-                                                          )
+                                                        ? containerBorder
                                                         : Colors.black12),
                                               width: isCurrentTarget
                                                   ? 1.8
@@ -1784,9 +1828,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                   color: isCurrentTarget
                                                       ? statusColor
                                                       : (isDark
-                                                            ? const Color(
-                                                                0xFFDCF4A2,
-                                                              ).withValues(
+                                                            ? themeAccent.withValues(
                                                                 alpha: 0.5,
                                                               )
                                                             : Colors.black38),
@@ -1809,135 +1851,36 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                       }).toList(),
                                     ),
                                   ),
-                                  const SizedBox(height: 10),
-                                  // Big Note Display
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.baseline,
-                                    textBaseline: TextBaseline.alphabetic,
-                                    children: [
-                                      Text(
-                                        key: const Key('note_name_display'),
-                                        _tuningResult.targetString
-                                                ?.formattedNoteName(
-                                                  preferSharps:
-                                                      !_settings.preferFlats,
-                                                ) ??
-                                            '--',
-                                        style: TextStyle(
-                                          fontSize: 68,
-                                          fontWeight: FontWeight.bold,
-                                          color: statusColor,
-                                          letterSpacing: 2,
-                                          shadows: [
-                                            if (_tuningResult.status ==
-                                                TuningStatus.inTune)
-                                              Shadow(
-                                                color: statusColor.withValues(
-                                                  alpha: 0.5,
-                                                ),
-                                                blurRadius: 16,
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                      if (_tuningResult.targetString != null)
-                                        Text(
-                                          key: const Key('note_octave_display'),
-                                          '${_tuningResult.targetString!.octave}',
-                                          style: TextStyle(
-                                            fontSize: 28,
-                                            fontWeight: FontWeight.w600,
-                                            color: statusColor.withValues(
-                                              alpha: 0.8,
-                                            ),
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  // Status Badge with Directional Micro-Icon
-                                  AnimatedContainer(
-                                    duration: const Duration(milliseconds: 200),
-                                    key: const Key('tuning_status_badge'),
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 18,
-                                      vertical: 7,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: statusColor.withValues(
-                                        alpha: isDark ? 0.18 : 0.12,
-                                      ),
-                                      borderRadius: BorderRadius.circular(22),
-                                      border: Border.all(
-                                        color: statusColor.withValues(
-                                          alpha: 0.7,
-                                        ),
-                                        width: 1.5,
-                                      ),
-                                      boxShadow: [
-                                        if (_tuningResult.status ==
-                                            TuningStatus.inTune)
-                                          BoxShadow(
-                                            color: statusColor.withValues(
-                                              alpha: 0.35,
-                                            ),
-                                            blurRadius: 10,
-                                            spreadRadius: 1,
-                                          ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (_tuningResult.status ==
-                                            TuningStatus.inTune) ...[
-                                          Icon(
-                                            Icons.check_circle,
-                                            size: 16,
-                                            color: statusColor,
-                                          ),
-                                          const SizedBox(width: 6),
-                                        ] else if (_tuningResult.status ==
-                                            TuningStatus.flat) ...[
-                                          Icon(
-                                            Icons.arrow_upward,
-                                            size: 16,
-                                            color: statusColor,
-                                          ),
-                                          const SizedBox(width: 6),
-                                        ] else if (_tuningResult.status ==
-                                            TuningStatus.sharp) ...[
-                                          Icon(
-                                            Icons.arrow_downward,
-                                            size: 16,
-                                            color: statusColor,
-                                          ),
-                                          const SizedBox(width: 6),
-                                        ],
-                                        Text(
-                                          statusText,
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.bold,
-                                            color: statusColor,
-                                            letterSpacing: 1.2,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  const SizedBox(height: 16),
-                                  // Horizontal Tuning Scale with Guitar-Pick Location Marker
-                                  HorizontalTuningScale(
+                                  const SizedBox(height: 28),
+                                  // Modern Circular Knob (Dial) Tuner Visualizer
+                                  CircularKnobTuner(
                                     stabilizedCents: _visualCents,
                                     isPitched: _tuningResult.isPitched,
                                     status: _tuningResult.status,
                                     statusColor: statusColor,
                                     isDark: isDark,
+                                    isAurora: isAurora,
+                                    noteName:
+                                        _tuningResult.targetString
+                                            ?.formattedNoteName(
+                                              preferSharps:
+                                                  !_settings.preferFlats,
+                                            ) ??
+                                        '--',
+                                    noteOctave:
+                                        _tuningResult.targetString != null
+                                        ? '${_tuningResult.targetString!.octave}'
+                                        : '',
+                                    statusTitle: statusTitle,
+                                    statusInstruction: statusInstruction,
+                                    size: 272.0,
+                                    onTap: _toggleCapture,
+                                    tapKey: _isCapturing
+                                        ? const Key('stop_capture_button')
+                                        : const Key('start_capture_button'),
+                                    isCapturing: _isCapturing,
                                   ),
-                                  const SizedBox(height: 12),
+                                  const SizedBox(height: 20),
                                   // Cents & Frequency Numerical Details
                                   Row(
                                     mainAxisAlignment:
@@ -1962,9 +1905,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                         style: TextStyle(
                                           fontSize: 13,
                                           color: isDark
-                                              ? const Color(
-                                                  0xFFDCF4A2,
-                                                ).withValues(alpha: 0.85)
+                                              ? themeAccent.withValues(
+                                                  alpha: 0.85,
+                                                )
                                               : Colors.black87,
                                         ),
                                       ),
@@ -1986,9 +1929,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: isDark
-                                              ? const Color(
-                                                  0xFFDCF4A2,
-                                                ).withValues(alpha: 0.6)
+                                              ? themeAccent.withValues(
+                                                  alpha: 0.6,
+                                                )
                                               : Colors.black38,
                                         ),
                                       ),
@@ -2000,90 +1943,15 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: isDark
-                                              ? const Color(
-                                                  0xFFDCF4A2,
-                                                ).withValues(alpha: 0.6)
+                                              ? themeAccent.withValues(
+                                                  alpha: 0.6,
+                                                )
                                               : Colors.black38,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          // Minimalist Circular Microphone Toggle Button
-                          Center(
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 250),
-                              curve: Curves.easeInOut,
-                              width: 68,
-                              height: 68,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                gradient: _isCapturing
-                                    ? const LinearGradient(
-                                        colors: [
-                                          Color(0xFFEF4444),
-                                          Color(0xFFDC2626),
-                                        ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      )
-                                    : LinearGradient(
-                                        colors: isDark
-                                            ? const [
-                                                Color(0xFFDCF4A2),
-                                                Color(0xFFC5E880),
-                                              ]
-                                            : [
-                                                Theme.of(
-                                                  context,
-                                                ).colorScheme.primary,
-                                                const Color(0xFF06D6A0),
-                                              ],
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                      ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color:
-                                        (_isCapturing
-                                                ? const Color(0xFFEF4444)
-                                                : (isDark
-                                                      ? const Color(0xFFDCF4A2)
-                                                      : Theme.of(
-                                                          context,
-                                                        ).colorScheme.primary))
-                                            .withValues(alpha: 0.4),
-                                    blurRadius: 16,
-                                    spreadRadius: 2,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: IconButton(
-                                key: _isCapturing
-                                    ? const Key('stop_capture_button')
-                                    : const Key('start_capture_button'),
-                                iconSize: 32,
-                                icon: Icon(
-                                  _isCapturing
-                                      ? Icons.mic_rounded
-                                      : Icons.mic_off_rounded,
-                                  color: _isCapturing
-                                      ? Colors.white
-                                      : (isDark
-                                            ? const Color(0xFF00376B)
-                                            : Colors.white),
-                                ),
-                                tooltip: _isCapturing
-                                    ? 'Stop Listening'
-                                    : 'Start Listening',
-                                onPressed: _isCapturing
-                                    ? _stopCapture
-                                    : _startCapture,
                               ),
                             ),
                           ),
@@ -2105,7 +1973,103 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
             ),
           ),
         ),
+        ],
       ),
     );
+  }
+}
+
+/// Custom painter for the tuner card that smoothly blends and fades the card
+/// surface and border into the background like a gradient ramp.
+class RampedCardPainter extends CustomPainter {
+  final Color cardColor;
+  final Color borderColor;
+  final double borderWidth;
+  final double borderRadius;
+  final bool isInTune;
+  final Color inTuneGlowColor;
+
+  const RampedCardPainter({
+    required this.cardColor,
+    required this.borderColor,
+    this.borderWidth = 1.2,
+    this.borderRadius = 20.0,
+    this.isInTune = false,
+    required this.inTuneGlowColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
+    final rrect = RRect.fromRectAndRadius(rect, Radius.circular(borderRadius));
+
+    // In-tune bloom glow (only at top, fading out to transparent)
+    if (isInTune) {
+      final glowPaint = Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            inTuneGlowColor.withValues(alpha: 0.35),
+            inTuneGlowColor.withValues(alpha: 0.15),
+            Colors.transparent,
+          ],
+          stops: const [0.0, 0.45, 0.85],
+        ).createShader(rect)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+      canvas.drawRRect(rrect, glowPaint);
+    }
+    // Note: No black drop shadow is drawn, so the bottom blends seamlessly
+    // into the background with zero dark outline or shadow artifacts.
+
+    // 1. Background Fill with Smooth Progressive Ramp to 0 Opacity:
+    // Starts solid at the top, progressively blends across the middle,
+    // and completely dissolves into 0 opacity (transparent) at the bottom.
+    final fillPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          cardColor,
+          cardColor.withValues(alpha: 0.85),
+          cardColor.withValues(alpha: 0.45),
+          cardColor.withValues(alpha: 0.15),
+          cardColor.withValues(alpha: 0.0), // Fully transparent at bottom
+        ],
+        stops: const [0.0, 0.25, 0.50, 0.75, 1.0],
+      ).createShader(rect)
+      ..style = PaintingStyle.fill;
+
+    canvas.drawRRect(rrect, fillPaint);
+
+    // 2. Border Stroke with Early Ramp:
+    // Beautifully frames the top and upper sides, then fades out completely
+    // past the middle so the entire lower half has zero border line.
+    final strokePaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          borderColor,
+          borderColor.withValues(alpha: 0.70),
+          borderColor.withValues(alpha: 0.20),
+          borderColor.withValues(alpha: 0.0), // Fades to zero by 65% height
+        ],
+        stops: const [0.0, 0.20, 0.45, 0.65],
+      ).createShader(rect)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = borderWidth;
+
+    canvas.drawRRect(rrect.deflate(borderWidth / 2), strokePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant RampedCardPainter oldDelegate) {
+    return oldDelegate.cardColor != cardColor ||
+        oldDelegate.borderColor != borderColor ||
+        oldDelegate.borderWidth != borderWidth ||
+        oldDelegate.borderRadius != borderRadius ||
+        oldDelegate.isInTune != isInTune ||
+        oldDelegate.inTuneGlowColor != inTuneGlowColor;
   }
 }

@@ -270,6 +270,105 @@ void main() {
       },
     );
 
+    test('holds last reliable reading during string decay for holdDuration', () {
+      final stabilizer = PitchStabilizer(
+        holdDuration: const Duration(milliseconds: 300),
+      );
+      final startTime = DateTime(2026, 1, 1, 12, 0, 0);
+
+      // Frame 1: pitched detection at -5.0 cents
+      stabilizer.update(
+        TuningResult(
+          targetString: string5,
+          targetFrequency: 110.0,
+          detectedFrequency: 109.68,
+          centsDifference: -5.0,
+          status: TuningStatus.flat,
+          confidence: 0.95,
+          isPitched: true,
+        ),
+        timestamp: startTime,
+      );
+      expect(stabilizer.hasValue, isTrue);
+      expect(stabilizer.isHolding, isFalse);
+      expect(stabilizer.smoothedCents, closeTo(-5.0, 0.01));
+
+      // Frame 2: 100ms later, signal fades into weak unpitched
+      final heldCents = stabilizer.update(
+        const TuningResult.unpitched(),
+        timestamp: startTime.add(const Duration(milliseconds: 100)),
+      );
+      expect(stabilizer.hasValue, isTrue);
+      expect(stabilizer.isHolding, isTrue);
+      expect(heldCents, closeTo(-5.0, 0.01));
+      expect(stabilizer.lastReliableResult?.targetString?.stringNumber, equals(5));
+
+      // Frame 3: 200ms later, still in hold window
+      final stillHeldCents = stabilizer.update(
+        const TuningResult.unpitched(),
+        timestamp: startTime.add(const Duration(milliseconds: 200)),
+      );
+      expect(stabilizer.hasValue, isTrue);
+      expect(stabilizer.isHolding, isTrue);
+      expect(stillHeldCents, closeTo(-5.0, 0.01));
+
+      // Frame 4: 350ms later, hold expires -> returns to 0.0 and unpitched
+      final expiredCents = stabilizer.update(
+        const TuningResult.unpitched(),
+        timestamp: startTime.add(const Duration(milliseconds: 350)),
+      );
+      expect(expiredCents, equals(0.0));
+      expect(stabilizer.hasValue, isFalse);
+      expect(stabilizer.isHolding, isFalse);
+    });
+
+    test('continues tracking peg adjustments when pitched frame arrives during hold', () {
+      final stabilizer = PitchStabilizer(
+        holdDuration: const Duration(milliseconds: 300),
+      );
+      final startTime = DateTime(2026, 1, 1, 12, 0, 0);
+
+      // Pitched frame
+      stabilizer.update(
+        TuningResult(
+          targetString: string5,
+          targetFrequency: 110.0,
+          detectedFrequency: 109.68,
+          centsDifference: -5.0,
+          status: TuningStatus.flat,
+          confidence: 0.95,
+          isPitched: true,
+        ),
+        timestamp: startTime,
+      );
+
+      // Unpitched frame (enters hold)
+      stabilizer.update(
+        const TuningResult.unpitched(),
+        timestamp: startTime.add(const Duration(milliseconds: 100)),
+      );
+      expect(stabilizer.isHolding, isTrue);
+
+      // User turned peg sharp: new pitched frame arrives at +2.0 cents (150ms after start)
+      final updated = stabilizer.update(
+        TuningResult(
+          targetString: string5,
+          targetFrequency: 110.0,
+          detectedFrequency: 110.13,
+          centsDifference: 2.0,
+          status: TuningStatus.inTune,
+          confidence: 0.95,
+          isPitched: true,
+        ),
+        timestamp: startTime.add(const Duration(milliseconds: 150)),
+      );
+
+      expect(stabilizer.isHolding, isFalse);
+      expect(stabilizer.hasValue, isTrue);
+      // Smoothed value tracks from -5.0 towards 2.0
+      expect(updated, greaterThan(-5.0));
+    });
+
     test('reset clears internal state', () {
       final stabilizer = PitchStabilizer();
 
@@ -387,5 +486,66 @@ void main() {
         expect(audioTriggerCount, equals(2));
       },
     );
+  });
+
+  group('TuningResult - Hysteresis & In-Tune Stability', () {
+    test('entering inTune requires cents within strict tolerance (<= 3.0)', () {
+      // 3.2 cents while previous status was flat/sharp -> remains sharp
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          3.2,
+          previousStatus: TuningStatus.sharp,
+          toleranceCents: 3.0,
+          hysteresisCents: 1.0,
+        ),
+        equals(TuningStatus.sharp),
+      );
+
+      // 2.9 cents -> enters inTune
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          2.9,
+          previousStatus: TuningStatus.sharp,
+          toleranceCents: 3.0,
+          hysteresisCents: 1.0,
+        ),
+        equals(TuningStatus.inTune),
+      );
+    });
+
+    test('exiting inTune requires exceeding tolerance + hysteresis (> 4.0)', () {
+      // Micro-fluctuation to 3.5 cents while already inTune -> stays inTune!
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          3.5,
+          previousStatus: TuningStatus.inTune,
+          toleranceCents: 3.0,
+          hysteresisCents: 1.0,
+        ),
+        equals(TuningStatus.inTune),
+      );
+
+      // Micro-fluctuation to -3.8 cents while inTune -> stays inTune!
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          -3.8,
+          previousStatus: TuningStatus.inTune,
+          toleranceCents: 3.0,
+          hysteresisCents: 1.0,
+        ),
+        equals(TuningStatus.inTune),
+      );
+
+      // Genuine peg turn to +4.3 cents -> cleanly exits inTune to sharp!
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          4.3,
+          previousStatus: TuningStatus.inTune,
+          toleranceCents: 3.0,
+          hysteresisCents: 1.0,
+        ),
+        equals(TuningStatus.sharp),
+      );
+    });
   });
 }

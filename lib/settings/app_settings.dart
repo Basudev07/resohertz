@@ -23,6 +23,9 @@ class AppSettings {
   /// UI Theme Mode: 'dark', 'light', or 'system'.
   final String themeMode;
 
+  /// Background visual style: 'classic' (French Blue with lime glow, default) or 'aurora' (Chromatic Aurora).
+  final String backgroundStyle;
+
   /// Whether tactile haptic vibration is enabled on in-tune locks.
   final bool hapticEnabled;
 
@@ -37,6 +40,7 @@ class AppSettings {
     this.autoStartListening = false,
     this.preferFlats = false,
     this.themeMode = 'dark',
+    this.backgroundStyle = 'classic',
     this.hapticEnabled = true,
     this.soundEnabled = true,
   });
@@ -67,6 +71,7 @@ class AppSettings {
     bool? autoStartListening,
     bool? preferFlats,
     String? themeMode,
+    String? backgroundStyle,
     bool? hapticEnabled,
     bool? soundEnabled,
   }) {
@@ -78,6 +83,7 @@ class AppSettings {
       autoStartListening: autoStartListening ?? this.autoStartListening,
       preferFlats: preferFlats ?? this.preferFlats,
       themeMode: themeMode ?? this.themeMode,
+      backgroundStyle: backgroundStyle ?? this.backgroundStyle,
       hapticEnabled: hapticEnabled ?? this.hapticEnabled,
       soundEnabled: soundEnabled ?? this.soundEnabled,
     );
@@ -92,6 +98,7 @@ class AppSettings {
     'autoStartListening': autoStartListening,
     'preferFlats': preferFlats,
     'themeMode': themeMode,
+    'backgroundStyle': backgroundStyle,
     'hapticEnabled': hapticEnabled,
     'soundEnabled': soundEnabled,
   };
@@ -112,6 +119,7 @@ class AppSettings {
       autoStartListening: json['autoStartListening'] as bool? ?? false,
       preferFlats: json['preferFlats'] as bool? ?? false,
       themeMode: json['themeMode'] as String? ?? 'dark',
+      backgroundStyle: json['backgroundStyle'] as String? ?? 'classic',
       hapticEnabled: json['hapticEnabled'] as bool? ?? true,
       soundEnabled: json['soundEnabled'] as bool? ?? true,
     );
@@ -128,6 +136,7 @@ class AppSettings {
           autoStartListening == other.autoStartListening &&
           preferFlats == other.preferFlats &&
           themeMode == other.themeMode &&
+          backgroundStyle == other.backgroundStyle &&
           hapticEnabled == other.hapticEnabled &&
           soundEnabled == other.soundEnabled &&
           _listEquals(favoriteTuningIds, other.favoriteTuningIds);
@@ -149,6 +158,7 @@ class AppSettings {
       autoStartListening.hashCode ^
       preferFlats.hashCode ^
       themeMode.hashCode ^
+      backgroundStyle.hashCode ^
       hapticEnabled.hashCode ^
       soundEnabled.hashCode;
 }

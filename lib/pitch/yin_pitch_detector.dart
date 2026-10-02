@@ -54,11 +54,16 @@ class YinPitchDetector {
       return const PitchResult.unpitched();
     }
 
-    // Step 0a: Fast energy / silence check
+    // Step 0a: Fast energy / silence check & transient / impulse detection
     double sumSquares = 0.0;
+    int peakSample = 0;
     int zeroCrossings = 0;
     for (int i = 0; i < _windowSize; i++) {
       final s = samples[i];
+      final absS = s.abs();
+      if (absS > peakSample) {
+        peakSample = absS;
+      }
       sumSquares += s * s;
       if (i > 0) {
         final prev = samples[i - 1];
@@ -67,9 +72,20 @@ class YinPitchDetector {
         }
       }
     }
-    final rms = sumSquares > 0 ? (sumSquares / _windowSize) : 0.0;
-    if (rms < silenceRmsThreshold * silenceRmsThreshold) {
+    final meanSquare = sumSquares > 0 ? (sumSquares / _windowSize) : 0.0;
+    if (meanSquare < silenceRmsThreshold * silenceRmsThreshold) {
       return const PitchResult.unpitched();
+    }
+
+    // Transient Rejection (Phone taps, surface knocks, table clicks):
+    // Periodic musical guitar plucks have moderate crest factor (Peak / RMS ~ 1.4 to 3.5).
+    // Sharp non-periodic impulse transients (knocking phone, table taps) have extreme crest factor (> 5.5).
+    final rmsVal = math.sqrt(meanSquare);
+    if (rmsVal > 0) {
+      final crestFactor = peakSample / rmsVal;
+      if (crestFactor > 5.8 && rmsVal > 80.0) {
+        return const PitchResult.unpitched();
+      }
     }
 
     // Step 1: Difference Function
@@ -223,7 +239,12 @@ class YinPitchDetector {
 
     // Step 5: Signal Validation (ZCR & Frequency Bounds)
     final expectedCrossings = (2.0 * _windowSize) / betterTau;
+    // Upper ZCR bound: rejects high-frequency noise and hiss
     if (zeroCrossings > (expectedCrossings * 2.8 + 12)) {
+      return const PitchResult.unpitched();
+    }
+    // Lower ZCR bound: rejects DC drift, mic handling rumble, and sub-audible pops
+    if (zeroCrossings < (expectedCrossings * 0.30 - 3)) {
       return const PitchResult.unpitched();
     }
 

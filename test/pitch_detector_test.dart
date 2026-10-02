@@ -195,6 +195,17 @@ void main() {
         expect(result.isPitched, isFalse);
       },
     );
+
+    test('returns unpitched for impulsive transient spike (tap or knock)', () {
+      final buffer = ByteData(2048 * 2);
+      // Sharp impulse spike (e.g. phone tap: single extreme peak with silent tail)
+      buffer.setInt16(100 * 2, 28000, Endian.little);
+      buffer.setInt16(101 * 2, -18000, Endian.little);
+      buffer.setInt16(102 * 2, 6000, Endian.little);
+
+      final result = detector.detectPitch(buffer.buffer.asUint8List());
+      expect(result.isPitched, isFalse);
+    });
   });
 
   group('YinPitchDetector - Harmonic Rejection & Accuracy', () {
