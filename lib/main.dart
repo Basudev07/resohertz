@@ -166,9 +166,51 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
   int _unpitchedConsecutiveFrames = 0;
   int? _candidateStringNumber;
   int _candidateStringFrames = 0;
+  int _idlePitchedFrames = 0;
+  bool _isModalOpen = false;
+  int _transposeSemitones = 0;
   double _referenceA4 = ReferenceFrequency.standard;
   TuningPreset _selectedPreset = TuningPreset.standard;
   String? _captureError;
+
+  TuningPreset get _effectivePreset => _transposeSemitones == 0
+      ? _selectedPreset
+      : _selectedPreset.transpose(
+          _transposeSemitones,
+          preferFlats: _settings.preferFlats,
+        );
+
+  void _setTransposeSemitones(int semitones) {
+    HapticFeedback.selectionClick();
+    final clamped = semitones.clamp(-6, 6);
+    setState(() {
+      _transposeSemitones = clamped;
+      _settings = _settings.copyWith(transposeSemitones: clamped);
+      if (_pitchResult.isPitched) {
+        _tuningResult = _tunerEngine.evaluate(
+          pitchResult: _pitchResult,
+          preset: _effectivePreset,
+          referenceA4: _referenceA4,
+        );
+      }
+    });
+    _settingsService.saveSettings(
+      _settings.copyWith(transposeSemitones: clamped),
+    );
+  }
+
+  String _getTransposeLabel(int semitones) {
+    if (semitones == 0) {
+      return 'Standard Pitch (±0)';
+    }
+    final abs = semitones.abs();
+    final stepWord = abs == 1 ? 'Half-Step' : 'Half-Steps';
+    if (semitones < 0) {
+      return '-$abs $stepWord Down (-${abs * 100}¢)';
+    } else {
+      return '+$abs $stepWord Up (Capo $abs / +${abs * 100}¢)';
+    }
+  }
 
   late final CustomTuningStorage _customTuningStorage;
   late final AppSettingsService _settingsService;
@@ -193,6 +235,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
     _settings = _settingsService.currentSettings;
     _referenceA4 = _settings.referenceA4;
     _selectedPreset = TuningPreset.byId(_settings.lastSelectedTuningId);
+    _transposeSemitones = _settings.transposeSemitones;
     _tunerEngine = widget.tunerEngine.copyWith(
       referenceA4: _settings.referenceA4,
       inTuneToleranceCents: _settings.inTuneToleranceCents,
@@ -218,6 +261,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
       _customPresets = custom;
       _referenceA4 = settings.referenceA4;
       _selectedPreset = initialPreset;
+      _transposeSemitones = settings.transposeSemitones;
       _tunerEngine = _tunerEngine.copyWith(
         referenceA4: settings.referenceA4,
         inTuneToleranceCents: settings.inTuneToleranceCents,
@@ -244,7 +288,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
             if (_pitchResult.isPitched) {
               _tuningResult = _tunerEngine.evaluate(
                 pitchResult: _pitchResult,
-                preset: newPreset,
+                preset: _effectivePreset,
                 referenceA4: _referenceA4,
               );
             }
@@ -278,7 +322,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
               if (_pitchResult.isPitched) {
                 _tuningResult = _tunerEngine.evaluate(
                   pitchResult: _pitchResult,
-                  preset: updated,
+                  preset: _effectivePreset,
                   referenceA4: _referenceA4,
                 );
               }
@@ -324,7 +368,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
           if (_pitchResult.isPitched) {
             _tuningResult = _tunerEngine.evaluate(
               pitchResult: _pitchResult,
-              preset: _selectedPreset,
+              preset: _effectivePreset,
               referenceA4: _referenceA4,
             );
           }
@@ -345,7 +389,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
       if (_pitchResult.isPitched) {
         _tuningResult = _tunerEngine.evaluate(
           pitchResult: _pitchResult,
-          preset: _selectedPreset,
+          preset: _effectivePreset,
           referenceA4: clamped,
         );
       }
@@ -361,7 +405,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
       if (_pitchResult.isPitched) {
         _tuningResult = _tunerEngine.evaluate(
           pitchResult: _pitchResult,
-          preset: preset,
+          preset: _effectivePreset,
           referenceA4: _referenceA4,
         );
       }
@@ -405,15 +449,18 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
         ? (isAurora ? const Color(0xFF282D4A) : const Color(0xFF0068C7))
         : const Color(0xFFE4E6F0);
 
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: sheetBg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (sheetContext) {
-        return StatefulBuilder(
+    _isModalOpen = true;
+    try {
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: sheetBg,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        builder: (sheetContext) {
+          return RepaintBoundary(
+            child: StatefulBuilder(
           builder: (ctx, setSheetState) {
             final favorites = _allPresets
                 .where((p) => _settings.isFavorite(p.id))
@@ -550,6 +597,240 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                         ],
                       ),
                     ),
+                    const SizedBox(height: 10),
+
+                    // Transpose Half-Step Adjustment Card
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14.0,
+                          vertical: 10.0,
+                        ),
+                        decoration: BoxDecoration(
+                          color: itemBg,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: _transposeSemitones != 0
+                                ? sheetAccent.withValues(alpha: 0.60)
+                                : itemBorder,
+                            width: _transposeSemitones != 0 ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.swap_vert,
+                                  size: 16,
+                                  color: sheetAccent,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'TRANSPOSE',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.1,
+                                    color: isDark
+                                        ? sheetAccent
+                                        : const Color(0xFF1E202C),
+                                  ),
+                                ),
+                                const Spacer(),
+                                if (_transposeSemitones != 0)
+                                  GestureDetector(
+                                    key: const Key('transpose_reset_button'),
+                                    onTap: () {
+                                      _setTransposeSemitones(0);
+                                      setSheetState(() {});
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 3,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: sheetAccent.withValues(
+                                          alpha: 0.15,
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        'RESET (0)',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: sheetAccent,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                // -1 Half Step Button
+                                OutlinedButton(
+                                  key: const Key('transpose_down_button'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    minimumSize: const Size(48, 36),
+                                    side: BorderSide(
+                                      color: _transposeSemitones > -6
+                                          ? sheetAccent.withValues(alpha: 0.6)
+                                          : (isDark
+                                                ? Colors.white12
+                                                : Colors.black12),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  onPressed: _transposeSemitones > -6
+                                      ? () {
+                                          _setTransposeSemitones(
+                                            _transposeSemitones - 1,
+                                          );
+                                          setSheetState(() {});
+                                        }
+                                      : null,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.remove,
+                                        size: 14,
+                                        color: _transposeSemitones > -6
+                                            ? sheetAccent
+                                            : Colors.grey,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        '½',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: _transposeSemitones > -6
+                                              ? sheetAccent
+                                              : Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+
+                                // Transpose Info Display
+                                Expanded(
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8.0,
+                                    ),
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          _getTransposeLabel(_transposeSemitones),
+                                          key: const Key(
+                                            'transpose_display_text',
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: _transposeSemitones != 0
+                                                ? sheetAccent
+                                                : (isDark
+                                                      ? Colors.white70
+                                                      : Colors.black87),
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _effectivePreset.notesSummary,
+                                          key: const Key(
+                                            'transpose_notes_preview',
+                                          ),
+                                          textAlign: TextAlign.center,
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            letterSpacing: 1.1,
+                                            fontWeight: FontWeight.w500,
+                                            color: isDark
+                                                ? Colors.white54
+                                                : Colors.black45,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+
+                                // +1 Half Step Button
+                                OutlinedButton(
+                                  key: const Key('transpose_up_button'),
+                                  style: OutlinedButton.styleFrom(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    minimumSize: const Size(48, 36),
+                                    side: BorderSide(
+                                      color: _transposeSemitones < 6
+                                          ? sheetAccent.withValues(alpha: 0.6)
+                                          : (isDark
+                                                ? Colors.white12
+                                                : Colors.black12),
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                  ),
+                                  onPressed: _transposeSemitones < 6
+                                      ? () {
+                                          _setTransposeSemitones(
+                                            _transposeSemitones + 1,
+                                          );
+                                          setSheetState(() {});
+                                        }
+                                      : null,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.add,
+                                        size: 14,
+                                        color: _transposeSemitones < 6
+                                            ? sheetAccent
+                                            : Colors.grey,
+                                      ),
+                                      const SizedBox(width: 2),
+                                      Text(
+                                        '½',
+                                        style: TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                          color: _transposeSemitones < 6
+                                              ? sheetAccent
+                                              : Colors.grey,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     const Divider(height: 18),
 
                     // List of Tunings
@@ -591,7 +872,13 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                 final isSelected =
                                     preset.id == _selectedPreset.id;
                                 final isFav = _settings.isFavorite(preset.id);
-                                final formula = preset.strings
+                                final effectivePresetItem = _transposeSemitones == 0
+                                    ? preset
+                                    : preset.transpose(
+                                        _transposeSemitones,
+                                        preferFlats: _settings.preferFlats,
+                                      );
+                                final formula = effectivePresetItem.strings
                                     .map((s) => s.noteName)
                                     .join('  •  ');
 
@@ -652,7 +939,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                                   children: [
                                                     Flexible(
                                                       child: Text(
-                                                        preset.name,
+                                                        _transposeSemitones == 0
+                                                            ? preset.name
+                                                            : '${preset.name} (${_transposeSemitones > 0 ? "+$_transposeSemitones" : "$_transposeSemitones"}½)',
                                                         style: TextStyle(
                                                           fontSize: 14,
                                                           fontWeight: isSelected
@@ -789,42 +1078,60 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
               },
             );
           },
-        );
-      },
-    );
+        ),
+      );
+    },
+  );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isModalOpen = false;
+        });
+      }
+    }
   }
 
   Future<void> _openSettingsDialog() async {
-    await showDialog<void>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.60),
-      builder: (ctx) => SettingsDialog(
-        currentSettings: _settings,
-        allPresets: _allPresets,
-        onSave: (newSettings) async {
-          setState(() {
-            _settings = newSettings;
-            _referenceA4 = newSettings.referenceA4;
-            _tunerEngine = _tunerEngine.copyWith(
-              referenceA4: newSettings.referenceA4,
-              inTuneToleranceCents: newSettings.inTuneToleranceCents,
-            );
-            if (_pitchResult.isPitched) {
-              _tuningResult = _tunerEngine.evaluate(
-                pitchResult: _pitchResult,
-                preset: _selectedPreset,
-                referenceA4: _referenceA4,
+    _isModalOpen = true;
+    try {
+      await showDialog<void>(
+        context: context,
+        barrierColor: Colors.black.withValues(alpha: 0.60),
+        builder: (ctx) => SettingsDialog(
+          currentSettings: _settings,
+          allPresets: _allPresets,
+          onSave: (newSettings) async {
+            setState(() {
+              _settings = newSettings;
+              _referenceA4 = newSettings.referenceA4;
+              _transposeSemitones = newSettings.transposeSemitones;
+              _tunerEngine = _tunerEngine.copyWith(
+                referenceA4: newSettings.referenceA4,
+                inTuneToleranceCents: newSettings.inTuneToleranceCents,
               );
-            }
-          });
-          await _settingsService.saveSettings(newSettings);
-          if (!mounted) return;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Preferences saved.')));
-        },
-      ),
-    );
+              if (_pitchResult.isPitched) {
+                _tuningResult = _tunerEngine.evaluate(
+                  pitchResult: _pitchResult,
+                  preset: _effectivePreset,
+                  referenceA4: _referenceA4,
+                );
+              }
+            });
+            await _settingsService.saveSettings(newSettings);
+            if (!mounted) return;
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Preferences saved.')));
+          },
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isModalOpen = false;
+        });
+      }
+    }
   }
 
   @override
@@ -898,6 +1205,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
       _unpitchedConsecutiveFrames = 0;
       _candidateStringNumber = null;
       _candidateStringFrames = 0;
+      _idlePitchedFrames = 0;
       _hasPlayedInTuneSoundForCurrentNote = false;
     });
 
@@ -916,7 +1224,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
           final rms = AudioCaptureService.calculateRms(chunk);
 
           // Acoustic Noise Gate: Silence/low ambient room noise is rejected before pitch evaluation
-          final isAudible = rms >= 70.0;
+          final isAudible = rms >= 80.0;
           final pitch = isAudible
               ? _pitchDetector.detectPitch(chunk)
               : const PitchResult.unpitched();
@@ -924,19 +1232,53 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
           final tuning = isAudible && pitch.isPitched
               ? _tunerEngine.evaluate(
                   pitchResult: pitch,
-                  preset: _selectedPreset,
+                  preset: _effectivePreset,
                   referenceA4: _referenceA4,
                   previousStatus: _tuningResult.status,
                 )
               : const TuningResult.unpitched();
 
-          // Outlier & Noise Rejection during active note decay:
-          // If we are currently tracking or holding an active string, and a weak 1-frame noise chunk
-          // detects a wild jump to a different string (e.g. ambient voice phoneme or mic rustle),
-          // reject the outlier unless confirmed by strong energy (new pluck) or 2 consecutive frames.
+          // Transient Rejection & String Tracking:
+          // 1. Waking up from Idle:
+          //    A genuine guitar pluck resonates over many frames (> 500ms).
+          //    A physical tap (screen tap, table knock, pocket rustle) is a transient impulse
+          //    lasting < 30ms that vanishes after a single 46ms frame.
+          //    We require 2 consecutive pitched frames of the same note to wake from idle,
+          //    unless the sound is an exceptionally clean tone (confidence >= 0.90).
+          // 2. Active Note:
+          //    If an active note is already being tracked, an outlier jump to a different string
+          //    requires 2 consecutive frames to switch, preventing pick scrape glitches.
           final TuningResult effectiveTuning;
-          if (tuning.isPitched &&
-              _pitchStabilizer.hasValue &&
+          if (!_pitchStabilizer.hasValue) {
+            if (tuning.isPitched) {
+              if (tuning.confidence >= 0.90) {
+                // High confidence pure musical tone: wake up immediately
+                _idlePitchedFrames = 0;
+                effectiveTuning = tuning;
+              } else {
+                final incomingStringNum = tuning.targetString?.stringNumber;
+                if (_candidateStringNumber == incomingStringNum) {
+                  _idlePitchedFrames++;
+                } else {
+                  _candidateStringNumber = incomingStringNum;
+                  _idlePitchedFrames = 1;
+                }
+
+                if (_idlePitchedFrames >= 2) {
+                  effectiveTuning = tuning;
+                  _candidateStringNumber = null;
+                  _idlePitchedFrames = 0;
+                } else {
+                  // Single frame candidate from idle: hold idle until confirmed
+                  effectiveTuning = const TuningResult.unpitched();
+                }
+              }
+            } else {
+              _candidateStringNumber = null;
+              _idlePitchedFrames = 0;
+              effectiveTuning = const TuningResult.unpitched();
+            }
+          } else if (tuning.isPitched &&
               _pitchStabilizer.lastReliableResult?.targetString != null &&
               tuning.targetString != null &&
               tuning.targetString!.stringNumber !=
@@ -952,17 +1294,15 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
               _candidateStringFrames = 1;
             }
 
-            final isStrongPluck = rms >= 105.0;
-            final isConfirmedStringChange =
-                isStrongPluck || _candidateStringFrames >= 2;
+            final isConfirmedStringChange = _candidateStringFrames >= 2;
 
             if (isConfirmedStringChange) {
               effectiveTuning = tuning;
               _candidateStringNumber = null;
               _candidateStringFrames = 0;
             } else {
-              // Reject isolated weak outlier, treat as unpitched to continue stable decay hold
-              effectiveTuning = const TuningResult.unpitched();
+              // Transient pick scrape or harmonic outlier: hold the last reliable note rather than jumping strings
+              effectiveTuning = _pitchStabilizer.lastReliableResult!;
             }
           } else {
             _candidateStringNumber = null;
@@ -991,9 +1331,8 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
               }
             } else {
               _inTuneConsecutiveFrames = 0;
-              // Left in-tune range: Only re-arm if pitch moved past tolerance + hysteresis
-              // (e.g. genuine peg adjustment > 4.5 cents)
-              final rearmThreshold = _settings.inTuneToleranceCents + 1.5;
+              // Left in-tune range: Re-arm once pitch moves outside tolerance + hysteresis
+              final rearmThreshold = _settings.inTuneToleranceCents + 0.25;
               if (effectiveTuning.centsDifference.abs() > rearmThreshold) {
                 _hasPlayedInTuneSoundForCurrentNote = false;
               }
@@ -1005,6 +1344,26 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
             if (_unpitchedConsecutiveFrames >= 11) {
               _hasPlayedInTuneSoundForCurrentNote = false;
             }
+          }
+
+          if (_isModalOpen) {
+            // While modal sheet or settings dialog is open, update tuner state silently
+            // without triggering background screen rebuilds, ensuring smooth 60/120Hz sheet animations
+            if (effectiveTuning.isPitched) {
+              _pitchResult = pitch;
+              _tuningResult = effectiveTuning;
+              _visualCents = smoothedCents;
+            } else if (_pitchStabilizer.isHolding &&
+                _pitchStabilizer.lastReliableResult != null) {
+              _tuningResult = _pitchStabilizer.lastReliableResult!;
+              _visualCents = smoothedCents;
+            } else {
+              _pitchResult = const PitchResult.unpitched();
+              _tuningResult = const TuningResult.unpitched();
+              _visualCents = 0.0;
+              _pitchStabilizer.reset();
+            }
+            return;
           }
 
           setState(() {
@@ -1037,6 +1396,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
             _unpitchedConsecutiveFrames = 0;
             _candidateStringNumber = null;
             _candidateStringFrames = 0;
+            _idlePitchedFrames = 0;
             _hasPlayedInTuneSoundForCurrentNote = false;
             _pitchStabilizer.reset();
           });
@@ -1052,6 +1412,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
         _unpitchedConsecutiveFrames = 0;
         _candidateStringNumber = null;
         _candidateStringFrames = 0;
+        _idlePitchedFrames = 0;
         _hasPlayedInTuneSoundForCurrentNote = false;
         _pitchStabilizer.reset();
       });
@@ -1070,6 +1431,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
         _unpitchedConsecutiveFrames = 0;
         _candidateStringNumber = null;
         _candidateStringFrames = 0;
+        _idlePitchedFrames = 0;
         _hasPlayedInTuneSoundForCurrentNote = false;
         _pitchStabilizer.reset();
       });
@@ -1243,7 +1605,9 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
           // Background layer: Default is Classic French Blue with lime glow;
           // can be switched to Chromatic Aurora in Settings
           if (isAurora)
-            const AuroraMeshBackground()
+            const RepaintBoundary(
+              child: AuroraMeshBackground(),
+            )
           else
             const DecoratedBox(
               decoration: BoxDecoration(
@@ -1345,7 +1709,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                               ? _tuningResult
                                                     .targetString!
                                                     .fullLabel
-                                              : _selectedPreset.fullTitle,
+                                                : _effectivePreset.fullTitle,
                                           style: TextStyle(
                                             fontSize: 14,
                                             color: isDark
@@ -1757,7 +2121,7 @@ class _TunerHomeScreenState extends State<TunerHomeScreen>
                                     child: Row(
                                       mainAxisAlignment:
                                           MainAxisAlignment.spaceEvenly,
-                                      children: _selectedPreset.strings.map((
+                                      children: _effectivePreset.strings.map((
                                         guitarString,
                                       ) {
                                         final isCurrentTarget =
@@ -2073,3 +2437,4 @@ class RampedCardPainter extends CustomPainter {
         oldDelegate.inTuneGlowColor != inTuneGlowColor;
   }
 }
+

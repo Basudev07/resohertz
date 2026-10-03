@@ -78,12 +78,13 @@ class YinPitchDetector {
     }
 
     // Transient Rejection (Phone taps, surface knocks, table clicks):
-    // Periodic musical guitar plucks have moderate crest factor (Peak / RMS ~ 1.4 to 3.5).
-    // Sharp non-periodic impulse transients (knocking phone, table taps) have extreme crest factor (> 5.5).
+    // Periodic musical guitar plucks have moderate crest factor (Peak / RMS ~ 1.4 to 3.0).
+    // Sharp non-periodic impulse transients (finger taps on screen/phone, table knocks)
+    // have high crest factor (> 3.5) with concentrated impulse energy and silent tail.
     final rmsVal = math.sqrt(meanSquare);
     if (rmsVal > 0) {
       final crestFactor = peakSample / rmsVal;
-      if (crestFactor > 5.8 && rmsVal > 80.0) {
+      if (crestFactor > 3.5) {
         return const PitchResult.unpitched();
       }
     }
@@ -213,7 +214,7 @@ class YinPitchDetector {
       prominence = math.min(peakLeft, peakRight) - dipVal;
     }
 
-    if (prominence < 0.15 || dipVal > 0.35) {
+    if (prominence < 0.18 || dipVal > 0.32) {
       return const PitchResult.unpitched();
     }
 
@@ -259,7 +260,7 @@ class YinPitchDetector {
     return PitchResult(
       frequency: frequency,
       confidence: confidence,
-      isPitched: confidence >= 0.50,
+      isPitched: confidence >= 0.68,
     );
   }
 }

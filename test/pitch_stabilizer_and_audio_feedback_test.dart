@@ -248,7 +248,7 @@ void main() {
     });
 
     test(
-      'locks dead-center (0.0 cents) when status is inTune and close to 0',
+      'faithfully preserves cents difference without artificial center forcing',
       () {
         final stabilizer = PitchStabilizer();
 
@@ -265,8 +265,8 @@ void main() {
           ),
         );
 
-        // Should gently lock right at 0.0
-        expect(smoothed, equals(0.0));
+        // Faithful pitch fidelity: authentic cents is preserved, never artificially zeroed
+        expect(smoothed, closeTo(0.4, 0.001));
       },
     );
 
@@ -543,6 +543,44 @@ void main() {
           previousStatus: TuningStatus.inTune,
           toleranceCents: 3.0,
           hysteresisCents: 1.0,
+        ),
+        equals(TuningStatus.sharp),
+      );
+    });
+
+    test('default precision tolerance (±1.0 cent) and hysteresis (0.25 cents)', () {
+      // 1.0 cent enters inTune with default params
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          0.95,
+          previousStatus: TuningStatus.flat,
+        ),
+        equals(TuningStatus.inTune),
+      );
+
+      // 1.1 cents does NOT enter inTune from flat/sharp
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          1.1,
+          previousStatus: TuningStatus.sharp,
+        ),
+        equals(TuningStatus.sharp),
+      );
+
+      // 1.2 cents stays inTune when previously inTune due to 0.25 hysteresis (threshold 1.25)
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          1.2,
+          previousStatus: TuningStatus.inTune,
+        ),
+        equals(TuningStatus.inTune),
+      );
+
+      // 1.3 cents cleanly exits inTune to sharp
+      expect(
+        TuningResult.determineStatusWithHysteresis(
+          1.3,
+          previousStatus: TuningStatus.inTune,
         ),
         equals(TuningStatus.sharp),
       );

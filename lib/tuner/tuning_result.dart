@@ -73,7 +73,7 @@ class TuningResult {
   /// Determines [TuningStatus] based on [centsDifference] and [toleranceCents].
   static TuningStatus determineStatus(
     double centsDifference, {
-    double toleranceCents = 3.0,
+    double toleranceCents = 1.0,
   }) {
     if (centsDifference.abs() <= toleranceCents) {
       return TuningStatus.inTune;
@@ -92,8 +92,8 @@ class TuningResult {
   static TuningStatus determineStatusWithHysteresis(
     double centsDifference, {
     required TuningStatus previousStatus,
-    double toleranceCents = 3.0,
-    double hysteresisCents = 1.0,
+    double toleranceCents = 1.0,
+    double hysteresisCents = 0.25,
   }) {
     final effectiveTolerance = previousStatus == TuningStatus.inTune
         ? (toleranceCents + hysteresisCents)

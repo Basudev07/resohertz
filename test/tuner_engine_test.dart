@@ -103,9 +103,9 @@ void main() {
   group('TunerEngine - Full Evaluation Pipeline', () {
     const engine = TunerEngine();
 
-    test('evaluates in-tune A2 guitar pluck', () {
+    test('evaluates in-tune A2 guitar pluck within ±1.0 cent', () {
       const pitch = PitchResult(
-        frequency: 110.1,
+        frequency: 110.03,
         confidence: 0.96,
         isPitched: true,
       );
@@ -114,9 +114,22 @@ void main() {
       expect(result.isPitched, isTrue);
       expect(result.targetString?.displayName, 'A2');
       expect(result.targetFrequency, closeTo(110.0, 0.001));
-      expect(result.detectedFrequency, 110.1);
-      expect(result.centsDifference, closeTo(1.57, 0.05));
+      expect(result.detectedFrequency, 110.03);
+      expect(result.centsDifference, closeTo(0.47, 0.05));
       expect(result.status, TuningStatus.inTune);
+    });
+
+    test('evaluates 110.1 Hz (1.57 cents) as sharp under ±1.0 cent precision threshold', () {
+      const pitch = PitchResult(
+        frequency: 110.1,
+        confidence: 0.96,
+        isPitched: true,
+      );
+      final result = engine.evaluate(pitchResult: pitch);
+
+      expect(result.isPitched, isTrue);
+      expect(result.centsDifference, closeTo(1.57, 0.05));
+      expect(result.status, TuningStatus.sharp);
     });
 
     test('evaluates flat E2 guitar pluck', () {

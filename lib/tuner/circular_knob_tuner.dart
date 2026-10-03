@@ -84,6 +84,7 @@ class _CircularKnobTunerState extends State<CircularKnobTuner>
 
   late AnimationController _needleController;
   late Animation<double> _needleAnimation;
+  double _targetFraction = 0.0;
   double _currentRenderedFraction = 0.0;
 
   @override
@@ -101,12 +102,13 @@ class _CircularKnobTunerState extends State<CircularKnobTuner>
       curve: Curves.easeInOut,
     );
 
-    // 2. Fast 45ms needle tracking interpolator to avoid choppy restarts
+    // 2. Responsive, fluid needle tracking interpolator with easeOutSine curve
+    _currentRenderedFraction = _calcTargetFraction(widget.stabilizedCents, widget.isPitched);
+    _targetFraction = _currentRenderedFraction;
     _needleController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 45),
+      duration: const Duration(milliseconds: 340),
     );
-    _currentRenderedFraction = _calcTargetFraction(widget.stabilizedCents, widget.isPitched);
     _needleAnimation = AlwaysStoppedAnimation<double>(_currentRenderedFraction);
   }
 
@@ -128,16 +130,74 @@ class _CircularKnobTunerState extends State<CircularKnobTuner>
       }
     }
 
-    // Smoothly update needle fraction without jitter
-    final target = _calcTargetFraction(widget.stabilizedCents, widget.isPitched);
-    if ((target - _currentRenderedFraction).abs() > 0.001) {
-      final start = _needleAnimation.value;
-      _needleAnimation = Tween<double>(begin: start, end: target).animate(
-        CurvedAnimation(parent: _needleController, curve: Curves.easeOutQuad),
-      );
-      _currentRenderedFraction = target;
-      _needleController.forward(from: 0.0);
+    final newTarget = _calcTargetFraction(widget.stabilizedCents, widget.isPitched);
+    final targetDeltaFromCurrent = (newTarget - _targetFraction).abs();
+
+    final currentValue = _needleAnimation.value;
+    final totalDistance = (newTarget - currentValue).abs();
+
+    // 1. Natural microphone jitter & string sustain ripple suppression:
+    if (_needleController.isAnimating) {
+      if (targetDeltaFromCurrent < 0.015) {
+        return;
+      }
+
+      // Near-center anti-fluttering ("about to be tuned" and fading):
+      // When both current position and new target are within the near-center convergence zone
+      // (±2.5¢ / 0.05 fraction), do NOT rapidly whip back and forth across zero on acoustic noise.
+      // Require a genuine peg adjustment (> 2.0¢ / 0.04 fraction) or wait for current glide to settle.
+      final isNearCenter = newTarget.abs() < 0.05 && _targetFraction.abs() < 0.05;
+      if (isNearCenter) {
+        final isAlternatingSign = (newTarget * _targetFraction) <= 0;
+        if (isAlternatingSign || totalDistance < 0.04) {
+          return;
+        }
+      }
+
+      // If the animation is in its initial acceleration phase (< 40% elapsed) and delta is minor (< 1.5¢ / 0.03 fraction),
+      // avoid abrupt rapid-fire restarts to preserve weighted physical momentum.
+      if (_needleController.value < 0.40 && targetDeltaFromCurrent < 0.03) {
+        return;
+      }
+    } else {
+      // When needle is resting near center, ignore tiny acoustic flutter (< 1.2¢ / 0.025 fraction)
+      // to keep the dial rock-solid when about to be tuned
+      if (currentValue.abs() < 0.04 && newTarget.abs() < 0.04 && totalDistance < 0.025) {
+        return;
+      }
     }
+
+    // If already at target and not animating, do nothing
+    if (totalDistance < 0.002 && !_needleController.isAnimating) {
+      return;
+    }
+
+    // Calibrated, slightly slower durations for luxurious, weighted studio dial movement:
+    // - Micro-adjustments (< 2.5¢): 280ms for refined, stable feedback
+    // - Moderate adjustments (2.5¢ to 10¢): 340ms for buttery-smooth tracking
+    // - Large adjustments (> 10¢, initial attack, string switch, idle return): 420ms for weighted physical sweep
+    final int durationMs;
+    if (totalDistance < 0.05) {
+      durationMs = 280;
+    } else if (totalDistance < 0.20) {
+      durationMs = 340;
+    } else {
+      durationMs = 420;
+    }
+
+    _needleController.duration = Duration(milliseconds: durationMs);
+    _needleAnimation = Tween<double>(
+      begin: currentValue,
+      end: newTarget,
+    ).animate(
+      CurvedAnimation(
+        parent: _needleController,
+        curve: Curves.easeOutSine,
+      ),
+    );
+    _targetFraction = newTarget;
+    _currentRenderedFraction = newTarget;
+    _needleController.forward(from: 0.0);
   }
 
   @override
@@ -149,45 +209,51 @@ class _CircularKnobTunerState extends State<CircularKnobTuner>
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Semantics(
-        button: true,
-        label: widget.isCapturing ? 'Stop Listening' : 'Start Listening',
-        child: SizedBox(
-          width: widget.size,
-          height: widget.size,
-          child: Material(
-            color: Colors.transparent,
-            shape: const CircleBorder(),
-            clipBehavior: Clip.antiAlias,
-            child: InkWell(
-              key: widget.tapKey,
-              customBorder: const CircleBorder(),
-              onTap: widget.onTap,
-              splashColor: widget.statusColor.withValues(alpha: 0.18),
-              highlightColor: widget.statusColor.withValues(alpha: 0.08),
-              child: AnimatedBuilder(
-                animation: Listenable.merge([
-                  _onOffAnimation,
-                  _needleController,
-                ]),
-                builder: (context, child) {
-                  return CustomPaint(
-                    size: Size(widget.size, widget.size),
-                    painter: _CircularKnobPainter(
-                      fraction: _needleAnimation.value,
-                      isPitched: widget.isPitched,
-                      status: widget.status,
-                      statusColor: widget.statusColor,
-                      isDark: widget.isDark,
-                      isCapturing: widget.isCapturing,
-                      glowIntensity: _onOffAnimation.value,
-                      isAurora: widget.isAurora,
-                    ),
-                    child: child,
-                  );
-                },
-                child: _buildKnobCenter(context),
+    return RepaintBoundary(
+      child: Center(
+        child: Semantics(
+          button: true,
+          label: widget.isCapturing ? 'Stop Listening' : 'Start Listening',
+          child: SizedBox(
+            width: widget.size,
+            height: widget.size,
+            child: Material(
+              color: Colors.transparent,
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                key: widget.tapKey,
+                customBorder: const CircleBorder(),
+                onTap: widget.onTap,
+                splashColor: widget.statusColor.withValues(alpha: 0.18),
+                highlightColor: widget.statusColor.withValues(alpha: 0.08),
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([
+                    _onOffAnimation,
+                    _needleController,
+                  ]),
+                  builder: (context, child) {
+                    final currentFraction = _needleAnimation.value;
+                    final showIndicator = widget.isPitched || (currentFraction.abs() > 0.004 && widget.isCapturing);
+
+                    return CustomPaint(
+                      size: Size(widget.size, widget.size),
+                      painter: _CircularKnobPainter(
+                        fraction: currentFraction,
+                        showIndicator: showIndicator,
+                        isPitched: widget.isPitched,
+                        status: widget.status,
+                        statusColor: widget.statusColor,
+                        isDark: widget.isDark,
+                        isCapturing: widget.isCapturing,
+                        glowIntensity: _onOffAnimation.value,
+                        isAurora: widget.isAurora,
+                      ),
+                      child: child,
+                    );
+                  },
+                  child: _buildKnobCenter(context),
+                ),
               ),
             ),
           ),
@@ -345,6 +411,7 @@ class _CircularKnobTunerState extends State<CircularKnobTuner>
 /// so the knob remains clear and vibrant in both on and off states.
 class _CircularKnobPainter extends CustomPainter {
   final double fraction; // -1.0 (-50¢) to +1.0 (+50¢)
+  final bool showIndicator;
   final bool isPitched;
   final TuningStatus status;
   final Color statusColor;
@@ -360,6 +427,7 @@ class _CircularKnobPainter extends CustomPainter {
 
   const _CircularKnobPainter({
     required this.fraction,
+    required this.showIndicator,
     required this.isPitched,
     required this.status,
     required this.statusColor,
@@ -398,7 +466,7 @@ class _CircularKnobPainter extends CustomPainter {
     final tickInnerRadius = knobRadius + 5.0;
     final tickOuterRadius = outerRadius - 4.0;
     final centerTickIndex = _totalTicks ~/ 2; // Index 25 (0¢)
-    final targetTickIndex = isPitched
+    final targetTickIndex = showIndicator
         ? (centerTickIndex + (fraction * centerTickIndex)).round().clamp(0, _totalTicks - 1)
         : centerTickIndex;
 
@@ -418,14 +486,15 @@ class _CircularKnobPainter extends CustomPainter {
       // Determine active highlight:
       // When flat (fraction < 0), ticks between targetTickIndex and centerTickIndex illuminate
       // When sharp (fraction > 0), ticks between centerTickIndex and targetTickIndex illuminate
-      // When inTune, the center 3 ticks illuminate in lime green
+      // When inTune and indicator has arrived within the dead-center zone (±1.5¢ / 0.03 fraction),
+      // ONLY the single center tick illuminates in lime green
       bool isActive = false;
-      if (isPitched && isCapturing) {
-        if (isInTune) {
-          isActive = (i >= centerTickIndex - 1 && i <= centerTickIndex + 1);
+      if (showIndicator && isCapturing) {
+        if (isInTune && fraction.abs() < 0.03) {
+          isActive = isCenterTick;
         } else if (fraction < 0) {
           isActive = (i >= targetTickIndex && i <= centerTickIndex);
-        } else {
+        } else if (fraction > 0) {
           isActive = (i >= centerTickIndex && i <= targetTickIndex);
         }
       }
@@ -538,7 +607,7 @@ class _CircularKnobPainter extends CustomPainter {
       center.dx + (knobRadius - 7.0) * math.cos(pipAngle),
       center.dy + (knobRadius - 7.0) * math.sin(pipAngle),
     );
-    final pipColor = isInTune
+    final pipColor = (isInTune && showIndicator && fraction.abs() < 0.03)
         ? statusColor
         : (isDark
               ? (isAurora
@@ -551,34 +620,42 @@ class _CircularKnobPainter extends CustomPainter {
     canvas.drawCircle(pipCenter, 3.2, pipPaint);
 
     // 5. Active Dynamic Pointer (Needle Dot on Knob Rim)
-    if (isPitched && !isInTune && isCapturing) {
+    if (showIndicator && isCapturing) {
       final currentAngle = -math.pi / 2 + (fraction * (_sweepAngleRad / 2));
       final needleCenter = Offset(
         center.dx + (knobRadius - 7.0) * math.cos(currentAngle),
         center.dy + (knobRadius - 7.0) * math.sin(currentAngle),
       );
 
-      // Subtle shader halo behind pointer dot
-      final dotHaloRect = Rect.fromCircle(center: needleCenter, radius: 5.0);
-      final pointerHaloPaint = Paint()
-        ..shader = RadialGradient(
-          colors: [
-            statusColor.withValues(alpha: 0.45),
-            Colors.transparent,
-          ],
-        ).createShader(dotHaloRect);
-      canvas.drawCircle(needleCenter, 5.0, pointerHaloPaint);
+      // When in-tune and arrived at dead-center, the pointer seamlessly merges with the glowing center pip
+      final isMergedWithCenterPip = isInTune && fraction.abs() < 0.008;
+      if (!isMergedWithCenterPip) {
+        final double opacity = isPitched ? 1.0 : (fraction.abs() * 5.0).clamp(0.0, 1.0);
+        if (opacity > 0.01) {
+          // Subtle shader halo behind pointer dot
+          final dotHaloRect = Rect.fromCircle(center: needleCenter, radius: 5.0);
+          final pointerHaloPaint = Paint()
+            ..shader = RadialGradient(
+              colors: [
+                statusColor.withValues(alpha: 0.45 * opacity),
+                Colors.transparent,
+              ],
+            ).createShader(dotHaloRect);
+          canvas.drawCircle(needleCenter, 5.0, pointerHaloPaint);
 
-      final pointerPaint = Paint()
-        ..color = statusColor
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(needleCenter, 3.2, pointerPaint);
+          final pointerPaint = Paint()
+            ..color = statusColor.withValues(alpha: opacity)
+            ..style = PaintingStyle.fill;
+          canvas.drawCircle(needleCenter, 3.2, pointerPaint);
+        }
+      }
     }
   }
 
   @override
   bool shouldRepaint(covariant _CircularKnobPainter oldDelegate) {
     return oldDelegate.fraction != fraction ||
+        oldDelegate.showIndicator != showIndicator ||
         oldDelegate.isPitched != isPitched ||
         oldDelegate.status != status ||
         oldDelegate.statusColor != statusColor ||

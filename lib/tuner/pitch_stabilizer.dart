@@ -8,12 +8,12 @@ import 'package:resohertz/tuner/tuning_result.dart';
 /// Features:
 /// - Adaptive exponential smoothing: small micro-variations (< 2.5 cents) are
 ///   heavily smoothed to eliminate jitter; larger pitch movements (> 7.0 cents)
-///   respond instantly with minimal delay.
-/// - Instant snap on string transition: switching strings or first note attack
-///   snaps immediately without visual lag.
+///   respond swiftly with minimal delay.
+/// - Rapid target acquisition on string transition: switching strings or first note attack
+///   initializes target position immediately for smooth animation.
 /// - Micro dead-band: filters out negligible sub-cent acoustic noise.
-/// - Dead-center in-tune anchor: gently locks right at 0.0 when within tolerance
-///   so the visual marker sits rock-solid in tune.
+/// - Authentic pitch fidelity: accurately preserves cents difference without
+///   artificially forcing or clamping the indicator to 0.0.
 class PitchStabilizer {
   /// Temporary hold duration during string decay before resetting to idle.
   final Duration holdDuration;
@@ -23,6 +23,8 @@ class PitchStabilizer {
   TuningResult? _lastReliableResult;
   DateTime? _lastPitchedTimestamp;
   bool _isHolding = false;
+
+  double? _lastDeltaSign;
 
   PitchStabilizer({
     this.holdDuration = const Duration(milliseconds: 300),
@@ -48,6 +50,7 @@ class PitchStabilizer {
     _lastReliableResult = null;
     _lastPitchedTimestamp = null;
     _isHolding = false;
+    _lastDeltaSign = null;
   }
 
   /// Ingests the latest [TuningResult] and returns the stabilized cents value
@@ -79,22 +82,27 @@ class PitchStabilizer {
     _lastPitchedTimestamp = now;
     _isHolding = false;
 
-    // If first pitched detection or target string changed, snap immediately
+    // If first pitched detection or target string changed, initialize tracking
     if (_smoothedCents == null || _lastStringNumber != currentStringNumber) {
-      _smoothedCents =
-          (result.status == TuningStatus.inTune && rawCents.abs() < 0.65)
-          ? 0.0
-          : rawCents;
+      _smoothedCents = rawCents;
       _lastStringNumber = currentStringNumber;
+      _lastDeltaSign = null;
       return _smoothedCents!;
     }
 
-    final delta = (rawCents - _smoothedCents!).abs();
+    final diff = rawCents - _smoothedCents!;
+    final delta = diff.abs();
 
     // Micro dead-band: ignore imperceptible acoustic jitter (< 0.25 cents)
     if (delta < 0.25) {
       return _smoothedCents!;
     }
+
+    // Direction-reversal detection: detects when incoming pitch alternates sign around smoothed value
+    // (the classic hallmark of acoustic phase interference and noise during string decay)
+    final currentDeltaSign = diff > 0 ? 1.0 : -1.0;
+    final isDirectionFlip = _lastDeltaSign != null && _lastDeltaSign != currentDeltaSign;
+    _lastDeltaSign = currentDeltaSign;
 
     // Adaptive alpha smoothing factor calibrated for 60Hz and 120Hz display smoothness:
     // delta < 3.0¢: heavy smoothing (alpha = 0.16) to eliminate fluttering
@@ -103,19 +111,22 @@ class PitchStabilizer {
     double alpha;
     if (delta < 3.0) {
       alpha = 0.16;
+      // Anti-fluttering during decay:
+      // When alternating directions within micro-range (< 2.0¢), strongly damp
+      // to eliminate rapid left-right wobble while preserving genuine peg adjustments.
+      if (isDirectionFlip && delta < 2.0) {
+        alpha = 0.04;
+      } else if (_smoothedCents!.abs() < 2.0 && rawCents.abs() < 2.0) {
+        // When about to be tuned (within ±2¢ of center), heavily stabilize against room noise
+        alpha = 0.07;
+      }
     } else if (delta < 10.0) {
       alpha = 0.16 + 0.24 * ((delta - 3.0) / 7.0);
     } else {
       alpha = 0.50;
     }
 
-    _smoothedCents = _smoothedCents! + alpha * (rawCents - _smoothedCents!);
-
-    // When verified in-tune by the tuner engine and close to center,
-    // gently lock to dead-center (0.0 cents) so the marker aligns perfectly
-    if (result.status == TuningStatus.inTune && _smoothedCents!.abs() < 0.65) {
-      _smoothedCents = 0.0;
-    }
+    _smoothedCents = _smoothedCents! + alpha * diff;
 
     return _smoothedCents!;
   }

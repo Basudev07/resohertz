@@ -8,12 +8,12 @@ class TunerEngine {
   /// Reference pitch for note A4 in Hertz (standard: 440.0 Hz).
   final double referenceA4;
 
-  /// Tolerance window in musical cents to classify as "In Tune" (standard: ±3.0 cents).
+  /// Tolerance window in musical cents to classify as "In Tune" (precise: ±1.0 cent).
   final double inTuneToleranceCents;
 
   const TunerEngine({
     this.referenceA4 = 440.0,
-    this.inTuneToleranceCents = 3.0,
+    this.inTuneToleranceCents = 1.0,
   });
 
   /// Returns a copy of this [TunerEngine] with optionally updated parameters.
@@ -32,7 +32,7 @@ class TunerEngine {
     TuningPreset preset = TuningPreset.standard,
     double? referenceA4,
     TuningStatus? previousStatus,
-    double hysteresisCents = 1.0,
+    double hysteresisCents = 0.25,
   }) {
     if (!pitchResult.isPitched || pitchResult.frequency <= 0.0) {
       return const TuningResult.unpitched();

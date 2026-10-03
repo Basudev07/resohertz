@@ -221,6 +221,36 @@ class TuningPreset {
     return bestString;
   }
 
+  /// Returns a copy of this tuning preset transposed by [semitones] half steps.
+  /// Positive values transpose pitch up (+1 = half-step up, Capo 1).
+  /// Negative values transpose pitch down (-1 = half-step down / E♭ standard).
+  TuningPreset transpose(int semitones, {bool? preferFlats}) {
+    if (semitones == 0) return this;
+
+    final useFlats = preferFlats ?? (semitones < 0);
+    final transposedStrings = strings.map((s) {
+      final newMidi = s.midiNote + semitones;
+      final pitchClass = (newMidi % 12 + 12) % 12;
+      final note = useFlats
+          ? GuitarString.chromaticFlats[pitchClass]
+          : GuitarString.chromaticNoteNames[pitchClass];
+      final octave = (newMidi ~/ 12) - 1;
+      return GuitarString(
+        stringNumber: s.stringNumber,
+        noteName: note,
+        octave: octave,
+        midiNote: newMidi,
+      );
+    }).toList();
+
+    return TuningPreset(
+      id: id,
+      name: name,
+      strings: transposedStrings,
+      isCustom: isCustom,
+    );
+  }
+
   @override
   String toString() => fullTitle;
 

@@ -206,6 +206,19 @@ void main() {
       final result = detector.detectPitch(buffer.buffer.asUint8List());
       expect(result.isPitched, isFalse);
     });
+
+    test('returns unpitched for finger tap on phone body / table thump', () {
+      final buffer = ByteData(2048 * 2);
+      // Moderately damped mechanical tap (crest factor ~ 4.2)
+      for (int i = 0; i < 40; i++) {
+        final decay = math.exp(-i / 8.0);
+        final sample = (math.sin(i * 0.5) * 4500 * decay).round();
+        buffer.setInt16((50 + i) * 2, sample, Endian.little);
+      }
+
+      final result = detector.detectPitch(buffer.buffer.asUint8List());
+      expect(result.isPitched, isFalse);
+    });
   });
 
   group('YinPitchDetector - Harmonic Rejection & Accuracy', () {

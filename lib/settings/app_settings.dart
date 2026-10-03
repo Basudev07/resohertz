@@ -11,7 +11,7 @@ class AppSettings {
   /// List of tuning preset IDs marked as favorites.
   final List<String> favoriteTuningIds;
 
-  /// In-tune tolerance window in musical cents (e.g. 2.0 = strict, 3.0 = standard, 5.0 = relaxed).
+  /// In-tune tolerance window in musical cents (e.g. 1.0 = precise, 2.0 = strict, 3.0 = standard, 5.0 = relaxed).
   final double inTuneToleranceCents;
 
   /// Whether to automatically start listening when the app opens.
@@ -32,17 +32,21 @@ class AppSettings {
   /// Whether audio chime feedback (success.mp3) is enabled on in-tune locks.
   final bool soundEnabled;
 
+  /// Global half-step transposition offset (-6 to +6 semitones, 0 = standard pitch).
+  final int transposeSemitones;
+
   const AppSettings({
     this.referenceA4 = ReferenceFrequency.standard,
     this.lastSelectedTuningId = 'standard',
     this.favoriteTuningIds = const ['standard', 'drop_d'],
-    this.inTuneToleranceCents = 3.0,
+    this.inTuneToleranceCents = 1.0,
     this.autoStartListening = false,
     this.preferFlats = false,
     this.themeMode = 'dark',
     this.backgroundStyle = 'classic',
     this.hapticEnabled = true,
     this.soundEnabled = true,
+    this.transposeSemitones = 0,
   });
 
   /// Factory for default factory settings.
@@ -74,6 +78,7 @@ class AppSettings {
     String? backgroundStyle,
     bool? hapticEnabled,
     bool? soundEnabled,
+    int? transposeSemitones,
   }) {
     return AppSettings(
       referenceA4: referenceA4 ?? this.referenceA4,
@@ -86,6 +91,7 @@ class AppSettings {
       backgroundStyle: backgroundStyle ?? this.backgroundStyle,
       hapticEnabled: hapticEnabled ?? this.hapticEnabled,
       soundEnabled: soundEnabled ?? this.soundEnabled,
+      transposeSemitones: transposeSemitones ?? this.transposeSemitones,
     );
   }
 
@@ -101,6 +107,7 @@ class AppSettings {
     'backgroundStyle': backgroundStyle,
     'hapticEnabled': hapticEnabled,
     'soundEnabled': soundEnabled,
+    'transposeSemitones': transposeSemitones,
   };
 
   /// Deserializes settings from a JSON map.
@@ -115,13 +122,14 @@ class AppSettings {
           json['lastSelectedTuningId'] as String? ?? 'standard',
       favoriteTuningIds: rawFavorites.map((e) => e.toString()).toList(),
       inTuneToleranceCents:
-          (json['inTuneToleranceCents'] as num?)?.toDouble() ?? 3.0,
+          (json['inTuneToleranceCents'] as num?)?.toDouble() ?? 1.0,
       autoStartListening: json['autoStartListening'] as bool? ?? false,
       preferFlats: json['preferFlats'] as bool? ?? false,
       themeMode: json['themeMode'] as String? ?? 'dark',
       backgroundStyle: json['backgroundStyle'] as String? ?? 'classic',
       hapticEnabled: json['hapticEnabled'] as bool? ?? true,
       soundEnabled: json['soundEnabled'] as bool? ?? true,
+      transposeSemitones: json['transposeSemitones'] as int? ?? 0,
     );
   }
 
@@ -139,6 +147,7 @@ class AppSettings {
           backgroundStyle == other.backgroundStyle &&
           hapticEnabled == other.hapticEnabled &&
           soundEnabled == other.soundEnabled &&
+          transposeSemitones == other.transposeSemitones &&
           _listEquals(favoriteTuningIds, other.favoriteTuningIds);
 
   static bool _listEquals(List<String> a, List<String> b) {
@@ -160,5 +169,6 @@ class AppSettings {
       themeMode.hashCode ^
       backgroundStyle.hashCode ^
       hapticEnabled.hashCode ^
-      soundEnabled.hashCode;
+      soundEnabled.hashCode ^
+      transposeSemitones.hashCode;
 }
